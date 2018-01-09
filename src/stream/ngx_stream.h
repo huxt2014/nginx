@@ -111,6 +111,8 @@ typedef struct {
 } ngx_stream_conf_addr_t;
 
 
+/* stream所有phase种类的定义在这里，按照先后顺序处理，
+ * 最后一个是NGX_STREAM_LOG_PHASE */
 typedef enum {
     NGX_STREAM_POST_ACCEPT_PHASE = 0,
     NGX_STREAM_PREACCESS_PHASE,

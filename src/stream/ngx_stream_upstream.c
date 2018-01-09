@@ -28,6 +28,7 @@ static char *ngx_stream_upstream_init_main_conf(ngx_conf_t *cf, void *conf);
 
 static ngx_command_t  ngx_stream_upstream_commands[] = {
 
+    /* 对应了stream-upstream的block */
     { ngx_string("upstream"),
       NGX_STREAM_MAIN_CONF|NGX_CONF_BLOCK|NGX_CONF_TAKE1,
       ngx_stream_upstream,

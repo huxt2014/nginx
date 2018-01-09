@@ -89,6 +89,7 @@ static ngx_stream_variable_t  ngx_stream_ssl_preread_vars[] = {
 };
 
 
+/* 这个是ssl的preread phase，需要额外关注 */
 static ngx_int_t
 ngx_stream_ssl_preread_handler(ngx_stream_session_t *s)
 {
@@ -438,6 +439,7 @@ ngx_stream_ssl_preread_init(ngx_conf_t *cf)
 
     cmcf = ngx_stream_conf_get_module_main_conf(cf, ngx_stream_core_module);
 
+    /* stream_ssl_preread_module作用在 NGX_STREAM_PREREAD_PHASE */
     h = ngx_array_push(&cmcf->phases[NGX_STREAM_PREREAD_PHASE].handlers);
     if (h == NULL) {
         return NGX_ERROR;

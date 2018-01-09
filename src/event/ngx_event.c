@@ -98,6 +98,7 @@ static ngx_core_module_t  ngx_events_module_ctx = {
 };
 
 
+/*  这个是NGX_CORE_MODULE类型，所以会在第一轮被解析 */
 ngx_module_t  ngx_events_module = {
     NGX_MODULE_V1,
     &ngx_events_module_ctx,                /* module context */
@@ -170,10 +171,12 @@ static ngx_event_module_t  ngx_event_core_module_ctx = {
     ngx_event_core_create_conf,            /* create configuration */
     ngx_event_core_init_conf,              /* init configuration */
 
+    /* event_core_module 的actions 都是NULL */
     { NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL }
 };
 
 
+/* 这个是NGX_EVENT_MODULE类型 */
 ngx_module_t  ngx_event_core_module = {
     NGX_MODULE_V1,
     &ngx_event_core_module_ctx,            /* module context */
@@ -605,6 +608,8 @@ ngx_event_process_init(ngx_cycle_t *cycle)
         return NGX_ERROR;
     }
 
+    /*  在process init阶段调用非core的NGX_EVENT_MODULE中action的init函数，
+     *  只会调用一次，因为位置文件中只能配置一个类型的loop */
     for (m = 0; cycle->modules[m]; m++) {
         if (cycle->modules[m]->type != NGX_EVENT_MODULE) {
             continue;
@@ -680,6 +685,7 @@ ngx_event_process_init(ngx_cycle_t *cycle)
 
 #endif
 
+    /* 最多只允许有这么多connection？*/
     cycle->connections =
         ngx_alloc(sizeof(ngx_connection_t) * cycle->connection_n, cycle->log);
     if (cycle->connections == NULL) {
@@ -725,6 +731,7 @@ ngx_event_process_init(ngx_cycle_t *cycle)
         next = &c[i];
     } while (i);
 
+    /* 有点像链表的感觉？*/
     cycle->free_connections = next;
     cycle->free_connection_n = cycle->connection_n;
 
@@ -739,6 +746,8 @@ ngx_event_process_init(ngx_cycle_t *cycle)
         }
 #endif
 
+        /* 在init process阶段，将每个listen状态的fd包装成ngx_connection_t，
+         * 然后放到ngx_listening_t里面 */
         c = ngx_get_connection(ls[i].fd, cycle->log);
 
         if (c == NULL) {
@@ -818,6 +827,8 @@ ngx_event_process_init(ngx_cycle_t *cycle)
 
 #else
 
+        /* 对于unix系列，在init process阶段为每个listen状态fd的read事件
+         * 设置这个callback */
         rev->handler = (c->type == SOCK_STREAM) ? ngx_event_accept
                                                 : ngx_event_recvmsg;
 
@@ -853,6 +864,7 @@ ngx_event_process_init(ngx_cycle_t *cycle)
 
 #endif
 
+        /* 最后加入到loop中 */
         if (ngx_add_event(rev, NGX_READ_EVENT, 0) == NGX_ERROR) {
             return NGX_ERROR;
         }
@@ -929,6 +941,7 @@ ngx_events_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 
     *(void **) conf = ctx;
 
+    /* 在解析events的时候，调用所有NGX_EVENT_MODULE的create_conf函数 */
     for (i = 0; cf->cycle->modules[i]; i++) {
         if (cf->cycle->modules[i]->type != NGX_EVENT_MODULE) {
             continue;
@@ -950,6 +963,7 @@ ngx_events_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     cf->module_type = NGX_EVENT_MODULE;
     cf->cmd_type = NGX_EVENT_CONF;
 
+    /* 在解析events的时候，解析所有的NGX_EVENT_MODULE*/
     rv = ngx_conf_parse(cf, NULL);
 
     *cf = pcf;
@@ -1004,6 +1018,7 @@ ngx_event_connections(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 }
 
 
+/* 读取配置文件时，在这里选择用哪种loop，select、pool还是其他 */
 static char *
 ngx_event_use(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 {

@@ -154,6 +154,9 @@ ngx_conf_add_dump(ngx_conf_t *cf, ngx_str_t *filename)
 }
 
 
+/* 可以用于解析整个文件、block以及param， cf记录了文件的当前位置
+ * 各个module也会用到这个函数来解析配置
+ * 奇葩的实现方式  */
 char *
 ngx_conf_parse(ngx_conf_t *cf, ngx_str_t *filename)
 {
@@ -207,6 +210,7 @@ ngx_conf_parse(ngx_conf_t *cf, ngx_str_t *filename)
         buf.end = buf.last + NGX_CONF_BUFFER;
         buf.temporary = 1;
 
+        /* cf->conf_file记录了遍历文件时记录指针的位置 */
         cf->conf_file->file.fd = fd;
         cf->conf_file->file.name.len = filename->len;
         cf->conf_file->file.name.data = filename->data;
@@ -240,6 +244,8 @@ ngx_conf_parse(ngx_conf_t *cf, ngx_str_t *filename)
 
 
     for ( ;; ) {
+        /* 读取每条指令，如果有参数的话会放到args中，
+           例如：worker_processes  1; */
         rc = ngx_conf_read_token(cf);
 
         /*
@@ -288,6 +294,7 @@ ngx_conf_parse(ngx_conf_t *cf, ngx_str_t *filename)
         }
 
         /* rc == NGX_OK || rc == NGX_CONF_BLOCK_START */
+        /* 读到;或者{才会调用handler */
 
         if (cf->handler) {
 
@@ -365,6 +372,8 @@ ngx_conf_handler(ngx_conf_t *cf, ngx_int_t last)
 
     found = 0;
 
+    /* 在配置文件中读到;或者{才会到这里 */
+    /* 遍历每个module的每个commands配置，用name与module_type进行匹配 */
     for (i = 0; cf->cycle->modules[i]; i++) {
 
         cmd = cf->cycle->modules[i]->commands;
@@ -460,6 +469,7 @@ ngx_conf_handler(ngx_conf_t *cf, ngx_int_t last)
                 }
             }
 
+            /* 匹配成功后调用command的set函数 */
             rv = cmd->set(cf, cmd, conf);
 
             if (rv == NGX_CONF_OK) {

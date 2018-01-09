@@ -346,6 +346,7 @@ ngx_module_t  ngx_stream_proxy_module = {
 };
 
 
+/* 这个是stream-server-proxy_pass的handler */
 static void
 ngx_stream_proxy_handler(ngx_stream_session_t *s)
 {
@@ -373,6 +374,7 @@ ngx_stream_proxy_handler(ngx_stream_session_t *s)
         return;
     }
 
+    /* 初始化一个upstream */
     s->upstream = u;
 
     s->log_handler = ngx_stream_proxy_log_error;
@@ -647,6 +649,7 @@ ngx_stream_proxy_set_local(ngx_stream_session_t *s, ngx_stream_upstream_t *u,
 }
 
 
+/* 默认stream-server-proxy_pass指令在这里连接upstream */
 static void
 ngx_stream_proxy_connect(ngx_stream_session_t *s)
 {
@@ -682,6 +685,7 @@ ngx_stream_proxy_connect(ngx_stream_session_t *s)
     u->state->first_byte_time = (ngx_msec_t) -1;
     u->state->response_time = ngx_current_msec;
 
+    /* 根据配置信息连接upstream */
     rc = ngx_event_connect_peer(&u->peer);
 
     ngx_log_debug1(NGX_LOG_DEBUG_STREAM, c->log, 0, "proxy connect: %i", rc);
@@ -2037,8 +2041,12 @@ ngx_stream_proxy_pass(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
         return "is duplicate";
     }
 
+    /* STREAM_CONTENT_PHASE由ngx_stream_core_content_phase函数负责处理，
+       ngx_stream_core_content_phase会调用cscf->handler */
     cscf = ngx_stream_conf_get_module_srv_conf(cf, ngx_stream_core_module);
 
+    /* 根据stream-server-proxy_pass设置了cscf->handler，
+     * 在解析配置文件的时候完成。 */
     cscf->handler = ngx_stream_proxy_handler;
 
     value = cf->args->elts;

@@ -1532,6 +1532,8 @@ ngx_stream_log_init(ngx_conf_t *cf)
 
     cmcf = ngx_stream_conf_get_module_main_conf(cf, ngx_stream_core_module);
 
+    /* stream_log module在这里为NGX_STREAM_LOG_PHASE添加了一个handler，
+     * 喜闻乐见！ */
     h = ngx_array_push(&cmcf->phases[NGX_STREAM_LOG_PHASE].handlers);
     if (h == NULL) {
         return NGX_ERROR;

@@ -4,6 +4,17 @@
  * Copyright (C) Nginx, Inc.
  */
 
+/* core module包括：
+ *   ngx_core_module           - src/core/nginx.c
+ *   ngx_errlog_module         - src/core/ngx_log.c
+ *   ngx_regex_module          - src/core/ngx_regex.c
+ *   ngx_thread_pool_module    - src/core/ngx_thread_pool.c
+ *   ngx_events_module         - src/event/ngx_event.c
+ *   ngx_openssl_module        - src/event/ngx_event_openssl.c
+ *   ngx_http_module           - src/http/ngx_http.c
+ *   ngx_mail_module           - src/mail/ngx_mail.c
+ *   ngx_stream_module         - src/stream/ngx_stream.c
+ */
 
 #include <ngx_config.h>
 #include <ngx_core.h>
@@ -72,6 +83,7 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
     }
     pool->log = log;
 
+    /* 分配一个新的cycle */
     cycle = ngx_pcalloc(pool, sizeof(ngx_cycle_t));
     if (cycle == NULL) {
         ngx_destroy_pool(pool);
@@ -82,6 +94,7 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
     cycle->log = log;
     cycle->old_cycle = old_cycle;
 
+    /* 将旧的配置拷贝到新的cycle里面，下面有很多类似操作 */
     cycle->conf_prefix.len = old_cycle->conf_prefix.len;
     cycle->conf_prefix.data = ngx_pstrdup(pool, &old_cycle->conf_prefix);
     if (cycle->conf_prefix.data == NULL) {
@@ -96,6 +109,7 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
         return NULL;
     }
 
+    /* 配置文件的名称 */
     cycle->conf_file.len = old_cycle->conf_file.len;
     cycle->conf_file.data = ngx_pnalloc(pool, old_cycle->conf_file.len + 1);
     if (cycle->conf_file.data == NULL) {
@@ -186,6 +200,7 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
     ngx_queue_init(&cycle->reusable_connections_queue);
 
 
+    /* 这个数组用于存储所有module的指针 */
     cycle->conf_ctx = ngx_pcalloc(pool, ngx_max_module * sizeof(void *));
     if (cycle->conf_ctx == NULL) {
         ngx_destroy_pool(pool);
@@ -219,6 +234,10 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
     }
 
 
+    /* 调用所有NGX_CORE_MODULE的create_config()，通常会返回一个ngx_core_conf_t
+     * 类型的指针，内容已经被初始化，存储在全局的cycle中。后续解析NGX_MAIN_CONF
+     * 的时候，又会被传进去。
+     */
     for (i = 0; cycle->modules[i]; i++) {
         if (cycle->modules[i]->type != NGX_CORE_MODULE) {
             continue;
@@ -259,6 +278,7 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
     conf.cycle = cycle;
     conf.pool = pool;
     conf.log = log;
+    /* 第一次解析的时候，只会解析NGX_CORE_MODULE的NGX_MAIN_CONF类型的指令 */
     conf.module_type = NGX_CORE_MODULE;
     conf.cmd_type = NGX_MAIN_CONF;
 
@@ -266,12 +286,14 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
     log->log_level = NGX_LOG_DEBUG_ALL;
 #endif
 
+    /* 解析argv */
     if (ngx_conf_param(&conf) != NGX_CONF_OK) {
         environ = senv;
         ngx_destroy_cycle_pools(&conf);
         return NULL;
     }
 
+    /* 解析配置文件 */
     if (ngx_conf_parse(&conf, &cycle->conf_file) != NGX_CONF_OK) {
         environ = senv;
         ngx_destroy_cycle_pools(&conf);
@@ -283,6 +305,7 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
                        cycle->conf_file.data);
     }
 
+    /* 解析配置文件后，调用所有NGX_CORE_MODULE的init_conf() */
     for (i = 0; cycle->modules[i]; i++) {
         if (cycle->modules[i]->type != NGX_CORE_MODULE) {
             continue;
@@ -605,6 +628,7 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
         }
     }
 
+    /* 在这里会调用bind和listen*/
     if (ngx_open_listening_sockets(cycle) != NGX_OK) {
         goto failed;
     }
@@ -622,6 +646,7 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
 
     pool->log = cycle->log;
 
+    /* 调用所有module的init_module，每次重载配置后也都会调用 */
     if (ngx_init_modules(cycle) != NGX_OK) {
         /* fatal */
         exit(1);

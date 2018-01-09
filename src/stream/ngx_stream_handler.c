@@ -17,6 +17,7 @@ static u_char *ngx_stream_log_error(ngx_log_t *log, u_char *buf, size_t len);
 static void ngx_stream_proxy_protocol_handler(ngx_event_t *rev);
 
 
+/*对于stream，accept之后处理逻辑的入口在这个函数 */
 void
 ngx_stream_init_connection(ngx_connection_t *c)
 {
@@ -115,6 +116,8 @@ ngx_stream_init_connection(ngx_connection_t *c)
         }
     }
 
+    /* accept后，为了处理stream的连接，创建了一个session，
+     * session里面会有local socket */
     s = ngx_pcalloc(c->pool, sizeof(ngx_stream_session_t));
     if (s == NULL) {
         ngx_stream_close_connection(c);
@@ -173,9 +176,11 @@ ngx_stream_init_connection(ngx_connection_t *c)
     s->start_sec = tp->sec;
     s->start_msec = tp->msec;
 
+    /* 将local socket的read事件处理函数改成了这个 */
     rev = c->read;
     rev->handler = ngx_stream_session_handler;
 
+    /* 貌似支持了proxy protocol？*/
     if (addr_conf->proxy_protocol) {
         c->log->action = "reading PROXY protocol";
 
@@ -289,6 +294,7 @@ ngx_stream_session_handler(ngx_event_t *rev)
     c = rev->data;
     s = c->data;
 
+    /* stream module在创建session后，就开始处理phrase了 */
     ngx_stream_core_run_phases(s);
 }
 

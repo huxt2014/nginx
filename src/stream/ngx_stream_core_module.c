@@ -42,6 +42,7 @@ static ngx_command_t  ngx_stream_core_commands[] = {
       offsetof(ngx_stream_core_main_conf_t, variables_hash_bucket_size),
       NULL },
 
+    /* 对应了stream-server的block，由NGX_STREAM_MAIN_CON标记 */
     { ngx_string("server"),
       NGX_STREAM_MAIN_CONF|NGX_CONF_BLOCK|NGX_CONF_NOARGS,
       ngx_stream_core_server,
@@ -49,6 +50,7 @@ static ngx_command_t  ngx_stream_core_commands[] = {
       0,
       NULL },
 
+    /* 对应了stream-server-listen，由NGX_STREAM_SRV_CONF标记 */
     { ngx_string("listen"),
       NGX_STREAM_SRV_CONF|NGX_CONF_1MORE,
       ngx_stream_core_listen,
@@ -159,6 +161,7 @@ ngx_stream_core_run_phases(ngx_stream_session_t *s)
 }
 
 
+/* checker控制了如何跳向下一个handler */
 ngx_int_t
 ngx_stream_core_generic_phase(ngx_stream_session_t *s,
     ngx_stream_phase_handler_t *ph)
@@ -168,6 +171,7 @@ ngx_stream_core_generic_phase(ngx_stream_session_t *s,
     /*
      * generic phase checker,
      * used by all phases, except for preread and content
+     * 注意这句注释
      */
 
     ngx_log_debug1(NGX_LOG_DEBUG_STREAM, s->connection->log, 0,
@@ -175,16 +179,19 @@ ngx_stream_core_generic_phase(ngx_stream_session_t *s,
 
     rc = ph->handler(s);
 
+    /* 如果handler返回了NGX_OK，则跳向下一个phase */
     if (rc == NGX_OK) {
         s->phase_handler = ph->next;
         return NGX_AGAIN;
     }
 
+    /* 如果handler返回了NGX_DECLINED，则跳向下一个handler */
     if (rc == NGX_DECLINED) {
         s->phase_handler++;
         return NGX_AGAIN;
     }
 
+    /* 如果返回NGX_AGAIN或者NGX_DONE，则整个phases都结束了 */
     if (rc == NGX_AGAIN || rc == NGX_DONE) {
         return NGX_OK;
     }
@@ -199,6 +206,7 @@ ngx_stream_core_generic_phase(ngx_stream_session_t *s,
 }
 
 
+/*NGX_STREAM_PREREAD_PHASE的checker一定会用这个 */
 ngx_int_t
 ngx_stream_core_preread_phase(ngx_stream_session_t *s,
     ngx_stream_phase_handler_t *ph)
@@ -222,9 +230,11 @@ ngx_stream_core_preread_phase(ngx_stream_session_t *s,
         rc = NGX_AGAIN;
 
     } else {
+        /* PREREAD_PHASE处理第一个handler */
         rc = ph->handler(s);
     }
 
+    /* 如果没有读够，那么继续读 */
     while (rc == NGX_AGAIN) {
 
         if (c->buffer == NULL) {
@@ -237,12 +247,14 @@ ngx_stream_core_preread_phase(ngx_stream_session_t *s,
 
         size = c->buffer->end - c->buffer->last;
 
+        /* 满了就不读了 */
         if (size == 0) {
             ngx_log_error(NGX_LOG_ERR, c->log, 0, "preread buffer full");
             rc = NGX_STREAM_BAD_REQUEST;
             break;
         }
 
+        /* 读完了就不读了 */
         if (c->read->eof) {
             rc = NGX_STREAM_OK;
             break;
@@ -281,6 +293,7 @@ ngx_stream_core_preread_phase(ngx_stream_session_t *s,
         ngx_del_timer(c->read);
     }
 
+    /* 对于NGX_OK、NGX_DECLINED等的处理类似与generic的那个checker */
     if (rc == NGX_OK) {
         s->phase_handler = ph->next;
         return NGX_AGAIN;
@@ -326,6 +339,7 @@ ngx_stream_core_content_phase(ngx_stream_session_t *s,
         return NGX_OK;
     }
 
+    /* stream module中主要处理数据的就是这个函数 */
     cscf->handler(s);
 
     return NGX_OK;
@@ -545,6 +559,7 @@ ngx_stream_core_server(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 
     /* parse inside server{} */
 
+    /* 解析到stream-server后，继续解析block的内容 */
     pcf = *cf;
     cf->ctx = ctx;
     cf->cmd_type = NGX_STREAM_SRV_CONF;
@@ -564,6 +579,7 @@ ngx_stream_core_server(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 }
 
 
+/* 解析stream module的配置文件时，将读取到的listen放到全局的listen中*/
 static char *
 ngx_stream_core_listen(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 {

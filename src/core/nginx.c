@@ -288,7 +288,9 @@ main(int argc, char *const *argv)
         return 1;
     }
 
+    /* 此时init_cycle仅有argv, pool, log, prefix, config_file等 */
     cycle = ngx_init_cycle(&init_cycle);
+    /* 到这里就完成了配置文件的解析，socket进入了listen状态 */
     if (cycle == NULL) {
         if (ngx_test_config) {
             ngx_log_stderr(0, "configuration file %s test failed",
@@ -324,6 +326,7 @@ main(int argc, char *const *argv)
         return 0;
     }
 
+    /* 这里处理通过命令行发送的信号，如reload等 */
     if (ngx_signal) {
         return ngx_signal_process(cycle, ngx_signal);
     }
@@ -340,6 +343,7 @@ main(int argc, char *const *argv)
 
 #if !(NGX_WIN32)
 
+    /* 设置相关signal的handler */
     if (ngx_init_signals(cycle->log) != NGX_OK) {
         return 1;
     }

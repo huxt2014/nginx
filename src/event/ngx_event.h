@@ -408,6 +408,7 @@ extern ngx_uint_t            ngx_use_epoll_rdhup;
 #endif
 
 
+/* action被简化成了宏，感觉比较恶心 */
 #define ngx_process_events   ngx_event_actions.process_events
 #define ngx_done_events      ngx_event_actions.done
 

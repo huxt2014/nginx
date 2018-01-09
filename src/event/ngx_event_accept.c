@@ -19,6 +19,7 @@ static void ngx_debug_accepted_connection(ngx_event_conf_t *ecf,
 #endif
 
 
+/* accept函数在这里定义... */
 void
 ngx_event_accept(ngx_event_t *ev)
 {
@@ -141,6 +142,7 @@ ngx_event_accept(ngx_event_t *ev)
         ngx_accept_disabled = ngx_cycle->connection_n / 8
                               - ngx_cycle->free_connection_n;
 
+        /* accept成功后将socket包装成ngx_connection_t */
         c = ngx_get_connection(s, ev->log);
 
         if (c == NULL) {
@@ -207,6 +209,7 @@ ngx_event_accept(ngx_event_t *ev)
 
         *log = ls->log;
 
+        /*在这里设置io函数，用于读写io */
         c->recv = ngx_recv;
         c->send = ngx_send;
         c->recv_chain = ngx_recv_chain;
@@ -310,6 +313,7 @@ ngx_event_accept(ngx_event_t *ev)
         log->data = NULL;
         log->handler = NULL;
 
+        /* accept后具体的处理逻辑的入口在这里：ngx_listening_t->handler */
         ls->handler(c);
 
         if (ngx_event_flags & NGX_USE_KQUEUE_EVENT) {

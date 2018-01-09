@@ -40,6 +40,7 @@ static ngx_event_module_t  ngx_select_module_ctx = {
     NULL,                                  /* create configuration */
     ngx_select_init_conf,                  /* init configuration */
 
+    /* 非core的NGX_EVENT_MODULE有action */
     {
         ngx_select_add_event,              /* add an event */
         ngx_select_del_event,              /* delete an event */
@@ -55,6 +56,7 @@ static ngx_event_module_t  ngx_select_module_ctx = {
 
 };
 
+/* select是NGX_EVENT_MODULE，没有各种init函数，也没有相关配置 */
 ngx_module_t  ngx_select_module = {
     NGX_MODULE_V1,
     &ngx_select_module_ctx,                /* module context */
@@ -100,8 +102,10 @@ ngx_select_init(ngx_cycle_t *cycle, ngx_msec_t timer)
         event_index = index;
     }
 
+    /* 在这里确认了使用什么函数进行io操作，例如io的读写 */
     ngx_io = ngx_os_io;
 
+    /* 在这里确认了使用什么函数注册/删除io事件，也就是action中的函数 */
     ngx_event_actions = ngx_select_module_ctx.actions;
 
     ngx_event_flags = NGX_USE_LEVEL_EVENT;
