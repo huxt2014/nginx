@@ -19,7 +19,8 @@ static void ngx_debug_accepted_connection(ngx_event_conf_t *ecf,
 #endif
 
 
-/* accept函数在这里定义... */
+/* SOCK_STREAM类型处于listen状态的socket可读后
+   调用这个函数，也就是对应的的accept操作... */
 void
 ngx_event_accept(ngx_event_t *ev)
 {
@@ -142,7 +143,7 @@ ngx_event_accept(ngx_event_t *ev)
         ngx_accept_disabled = ngx_cycle->connection_n / 8
                               - ngx_cycle->free_connection_n;
 
-        /* accept成功后将socket包装成ngx_connection_t */
+        /* accept成功后将local socket包装成ngx_connection_t */
         c = ngx_get_connection(s, ev->log);
 
         if (c == NULL) {
@@ -234,6 +235,7 @@ ngx_event_accept(ngx_event_t *ev)
         }
 #endif
 
+        /* 留意一下tcp中local socket的rev->ready和wev->ready初始化 */
         rev = c->read;
         wev = c->write;
 
@@ -313,7 +315,8 @@ ngx_event_accept(ngx_event_t *ev)
         log->data = NULL;
         log->handler = NULL;
 
-        /* accept后具体的处理逻辑的入口在这里：ngx_listening_t->handler */
+        /* 对于tcp，处理phase之前不会读数据，local socket也没有放到
+           loop当中  */
         ls->handler(c);
 
         if (ngx_event_flags & NGX_USE_KQUEUE_EVENT) {
@@ -326,6 +329,10 @@ ngx_event_accept(ngx_event_t *ev)
 
 #if !(NGX_WIN32)
 
+/* SOCK_DGRAM处于接收状态的socket可读后调用这个函数.
+   强烈质疑当前udp转发的实现策略，这种方式根本无法承载
+   较高的udp流量！！！
+   */
 void
 ngx_event_recvmsg(ngx_event_t *ev)
 {
@@ -371,6 +378,7 @@ ngx_event_recvmsg(ngx_event_t *ev)
 
     lc = ev->data;
     ls = lc->listening;
+    /* udp的local socket读一次后就不ready了 */
     ev->ready = 0;
 
     ngx_log_debug2(NGX_LOG_DEBUG_EVENT, ev->log, 0,
@@ -408,6 +416,7 @@ ngx_event_recvmsg(ngx_event_t *ev)
 
 #endif
 
+        /* 对于udp，在处理phase之前就直接收取了msg */
         n = recvmsg(lc->fd, &msg, 0);
 
         if (n == -1) {
@@ -439,6 +448,7 @@ ngx_event_recvmsg(ngx_event_t *ev)
         ngx_accept_disabled = ngx_cycle->connection_n / 8
                               - ngx_cycle->free_connection_n;
 
+        /* 包装成connection，lc貌似就是正在"监听"的端口 */
         c = ngx_get_connection(lc->fd, ev->log);
         if (c == NULL) {
             return;
@@ -565,12 +575,14 @@ ngx_event_recvmsg(ngx_event_t *ev)
 
 #endif
 
+        /* 对于udp，分配与接收数据同大小的buffer */
         c->buffer = ngx_create_temp_buf(c->pool, n);
         if (c->buffer == NULL) {
             ngx_close_accepted_connection(c);
             return;
         }
 
+        /* 对于udp，应该正好可以填满 */
         c->buffer->last = ngx_cpymem(c->buffer->last, buffer, n);
 
         rev = c->read;

@@ -287,6 +287,7 @@ ngx_master_process_cycle(ngx_cycle_t *cycle)
 }
 
 
+/* 单进程模式下的loop */
 void
 ngx_single_process_cycle(ngx_cycle_t *cycle)
 {
@@ -309,6 +310,7 @@ ngx_single_process_cycle(ngx_cycle_t *cycle)
     for ( ;; ) {
         ngx_log_debug0(NGX_LOG_DEBUG_EVENT, cycle->log, 0, "worker cycle");
 
+        /* loop中每次循环调用一次 */
         ngx_process_events_and_timers(cycle);
 
         if (ngx_terminate || ngx_quit) {
@@ -727,6 +729,7 @@ ngx_master_process_exit(ngx_cycle_t *cycle)
 }
 
 
+/* master-slave模式中worker的loop */
 static void
 ngx_worker_process_cycle(ngx_cycle_t *cycle, void *data)
 {

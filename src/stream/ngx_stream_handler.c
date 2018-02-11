@@ -17,7 +17,9 @@ static u_char *ngx_stream_log_error(ngx_log_t *log, u_char *buf, size_t len);
 static void ngx_stream_proxy_protocol_handler(ngx_event_t *rev);
 
 
-/*对于stream，accept之后处理逻辑的入口在这个函数 */
+/* listening状态的socket可读后会调用ngx_event_accept或者
+   ngx_event_recvmsg，这两个函数会调用ls->handler。对于
+   stream，ls-handler就是这个函数。 */
 void
 ngx_stream_init_connection(ngx_connection_t *c)
 {
@@ -116,7 +118,7 @@ ngx_stream_init_connection(ngx_connection_t *c)
         }
     }
 
-    /* accept后，为了处理stream的连接，创建了一个session，
+    /* 不管是tcp还是udp，都会创建一个session，
      * session里面会有local socket */
     s = ngx_pcalloc(c->pool, sizeof(ngx_stream_session_t));
     if (s == NULL) {
@@ -132,10 +134,12 @@ ngx_stream_init_connection(ngx_connection_t *c)
     s->ssl = addr_conf->ssl;
 #endif
 
+    /* 对于udp来说，这时已经有数据了，tcp的数据还没接收 */
     if (c->buffer) {
         s->received += c->buffer->last - c->buffer->pos;
     }
 
+    /* 这个是local socket */
     s->connection = c;
     c->data = s;
 
@@ -176,7 +180,10 @@ ngx_stream_init_connection(ngx_connection_t *c)
     s->start_sec = tp->sec;
     s->start_msec = tp->msec;
 
-    /* 将local socket的read事件处理函数改成了这个 */
+    /* 将local socket的read事件处理函数改成了这个,但是感觉到这里
+       local socket依旧没有放入loop。毕竟对于udp来说local socket
+       已经在loop当中了，不应该重复放入loop。不过一旦rev被放入loop，
+       那么对应的handler就是ngx_stream_session_handler */
     rev = c->read;
     rev->handler = ngx_stream_session_handler;
 
@@ -203,6 +210,7 @@ ngx_stream_init_connection(ngx_connection_t *c)
         return;
     }
 
+    /* ngx_stream_session_handler，处理phase的入口 */
     rev->handler(rev);
 }
 

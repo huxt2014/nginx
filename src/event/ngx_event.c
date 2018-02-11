@@ -193,6 +193,8 @@ ngx_module_t  ngx_event_core_module = {
 };
 
 
+/* loop中的关键函数，读取事件放入queue，
+   然后再处理事件 */
 void
 ngx_process_events_and_timers(ngx_cycle_t *cycle)
 {
@@ -242,6 +244,8 @@ ngx_process_events_and_timers(ngx_cycle_t *cycle)
 
     delta = ngx_current_msec;
 
+    /* 调用select、poll等函数，将event放入queue中.
+       这是一个宏，实际上是ngx_event_actions.process_events */
     (void) ngx_process_events(cycle, timer, flags);
 
     delta = ngx_current_msec - delta;
@@ -249,6 +253,8 @@ ngx_process_events_and_timers(ngx_cycle_t *cycle)
     ngx_log_debug1(NGX_LOG_DEBUG_EVENT, cycle->log, 0,
                    "timer delta: %M", delta);
 
+    /* 处理queue中的event，就是将event从queue中去掉，
+       然后再调用ev->handler  */
     ngx_event_process_posted(cycle, &ngx_posted_accept_events);
 
     if (ngx_accept_mutex_held) {
@@ -259,6 +265,7 @@ ngx_process_events_and_timers(ngx_cycle_t *cycle)
         ngx_event_expire_timers();
     }
 
+    /* 处理第二个queue中的event */
     ngx_event_process_posted(cycle, &ngx_posted_events);
 }
 
@@ -608,8 +615,8 @@ ngx_event_process_init(ngx_cycle_t *cycle)
         return NGX_ERROR;
     }
 
-    /*  在process init阶段调用非core的NGX_EVENT_MODULE中action的init函数，
-     *  只会调用一次，因为位置文件中只能配置一个类型的loop */
+    /*  在process init阶段调用NGX_EVENT_MODULE action的init函数，
+     *  只会调用一次，因为配置文件中只能配置一个类型的loop */
     for (m = 0; cycle->modules[m]; m++) {
         if (cycle->modules[m]->type != NGX_EVENT_MODULE) {
             continue;

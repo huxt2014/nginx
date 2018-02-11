@@ -150,6 +150,8 @@ ngx_stream_core_run_phases(ngx_stream_session_t *s)
 
     ph = cmcf->phase_engine.handlers;
 
+    /* 遍历phase_engine.handlers, s->phase_handler指向了下一个handler.
+       checker会修改s->phase_handler的值, 控制了下一跳是哪个handler. */
     while (ph[s->phase_handler].checker) {
 
         rc = ph[s->phase_handler].checker(s, &ph[s->phase_handler]);
@@ -161,7 +163,6 @@ ngx_stream_core_run_phases(ngx_stream_session_t *s)
 }
 
 
-/* checker控制了如何跳向下一个handler */
 ngx_int_t
 ngx_stream_core_generic_phase(ngx_stream_session_t *s,
     ngx_stream_phase_handler_t *ph)
@@ -191,7 +192,9 @@ ngx_stream_core_generic_phase(ngx_stream_session_t *s,
         return NGX_AGAIN;
     }
 
-    /* 如果返回NGX_AGAIN或者NGX_DONE，则整个phases都结束了 */
+    /* 如果返回NGX_AGAIN，则当前这次ngx_stream_core_run_phases结束了,
+       但是有可能稍后还会再次调用。如果返回NGX_DONE，一般整个session
+       都会结束. */
     if (rc == NGX_AGAIN || rc == NGX_DONE) {
         return NGX_OK;
     }
@@ -206,7 +209,7 @@ ngx_stream_core_generic_phase(ngx_stream_session_t *s,
 }
 
 
-/*NGX_STREAM_PREREAD_PHASE的checker一定会用这个 */
+/* NGX_STREAM_PREREAD_PHASE的checker一定会用这个checker */
 ngx_int_t
 ngx_stream_core_preread_phase(ngx_stream_session_t *s,
     ngx_stream_phase_handler_t *ph)
@@ -230,7 +233,6 @@ ngx_stream_core_preread_phase(ngx_stream_session_t *s,
         rc = NGX_AGAIN;
 
     } else {
-        /* PREREAD_PHASE处理第一个handler */
         rc = ph->handler(s);
     }
 
@@ -293,12 +295,13 @@ ngx_stream_core_preread_phase(ngx_stream_session_t *s,
         ngx_del_timer(c->read);
     }
 
-    /* 对于NGX_OK、NGX_DECLINED等的处理类似与generic的那个checker */
+    /* 去下一个phase */
     if (rc == NGX_OK) {
         s->phase_handler = ph->next;
         return NGX_AGAIN;
     }
 
+    /* 去下一个handler */
     if (rc == NGX_DECLINED) {
         s->phase_handler++;
         return NGX_AGAIN;
@@ -339,7 +342,7 @@ ngx_stream_core_content_phase(ngx_stream_session_t *s,
         return NGX_OK;
     }
 
-    /* stream module中主要处理数据的就是这个函数 */
+    /* stream module中content_phase的逻辑主要由这个函数完成 */
     cscf->handler(s);
 
     return NGX_OK;

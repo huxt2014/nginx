@@ -190,6 +190,7 @@ ngx_event_connect_peer(ngx_peer_connection_t *pc)
     ngx_log_debug3(NGX_LOG_DEBUG_EVENT, pc->log, 0,
                    "connect to %V, fd:%d #%uA", pc->name, s, c->number);
 
+    /* tcp和udp都会调用connect，对于udp来说有点问题！*/
     rc = connect(s, pc->sockaddr, pc->socklen);
 
     if (rc == -1) {
@@ -285,6 +286,7 @@ ngx_event_connect_peer(ngx_peer_connection_t *pc)
         event = NGX_LEVEL_EVENT;
     }
 
+    /* 将新建的remote socket放入loop */
     if (ngx_add_event(rev, NGX_READ_EVENT, event) != NGX_OK) {
         goto failed;
     }

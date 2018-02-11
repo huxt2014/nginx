@@ -102,10 +102,10 @@ ngx_select_init(ngx_cycle_t *cycle, ngx_msec_t timer)
         event_index = index;
     }
 
-    /* 在这里确认了使用什么函数进行io操作，例如io的读写 */
+    /* 在这里确认了io函数(recv,send,udp_recv等)的实现 */
     ngx_io = ngx_os_io;
 
-    /* 在这里确认了使用什么函数注册/删除io事件，也就是action中的函数 */
+    /* 在这里确认了事件函数(注册/删除io事件等)的实现，也就是action中的函数 */
     ngx_event_actions = ngx_select_module_ctx.actions;
 
     ngx_event_flags = NGX_USE_LEVEL_EVENT;
@@ -125,6 +125,7 @@ ngx_select_done(ngx_cycle_t *cycle)
 }
 
 
+/* 将ev->c->fd放到loop当中 */
 static ngx_int_t
 ngx_select_add_event(ngx_event_t *ev, ngx_int_t event, ngx_uint_t flags)
 {
@@ -312,6 +313,8 @@ ngx_select_process_events(ngx_cycle_t *cycle, ngx_msec_t timer,
 
     nready = 0;
 
+    /* 遍历所有的event，匹配event->c->fd与select返回的结果，
+       找到触发的event。貌似一个fd的事件可以触发多个event的handler */
     for (i = 0; i < nevents; i++) {
         ev = event_index[i];
         c = ev->data;
@@ -335,9 +338,12 @@ ngx_select_process_events(ngx_cycle_t *cycle, ngx_msec_t timer,
         if (found) {
             ev->ready = 1;
 
+            /* 每次循环中，先处理ngx_posted_accept_events中的
+               所有事件，再处理ngx_posted_events中的所有事件 */
             queue = ev->accept ? &ngx_posted_accept_events
                                : &ngx_posted_events;
 
+            /* 如果没有在队列中，则放入队列，不然啥都不干 */
             ngx_post_event(ev, queue);
 
             nready++;

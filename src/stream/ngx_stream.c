@@ -230,7 +230,7 @@ ngx_stream_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
         }
     }
 
-    /* 为各个phase分配内存 */
+    /* 为各个phase分配内存, phases记录在core module的config中  */
     if (ngx_stream_init_phases(cf, cmcf) != NGX_OK) {
         return NGX_CONF_ERROR;
     }
@@ -277,6 +277,8 @@ ngx_stream_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 }
 
 
+/* 貌似不用为NGX_STREAM_CONTENT_PHASE的handler分配数组，
+   因为这个handler已经被指定了，就是那一个函数。*/
 static ngx_int_t
 ngx_stream_init_phases(ngx_conf_t *cf, ngx_stream_core_main_conf_t *cmcf)
 {
@@ -342,7 +344,14 @@ ngx_stream_init_phase_handlers(ngx_conf_t *cf,
         n += cmcf->phases[i].handlers.nelts;
     }
 
-    /* stream中所有phase的handler都放在这个数组中，也就是phase_engine.handlers
+    /* stream中所有phase的handler函数指针都被复制到这个数组中，同时还有对应的
+       checker函数指针，这个数组也就是phase_engine.handlers:
+
+           |   phase 0    | phase 1 | ...
+           +----+----+----+----+----+----
+           | c0 | c0 | c0 | c1 | c1 | ...
+           | h0 | h1 | h2 | h3 | h4 |
+
      */
     ph = ngx_pcalloc(cf->pool,
                      n * sizeof(ngx_stream_phase_handler_t) + sizeof(void *));
@@ -353,20 +362,21 @@ ngx_stream_init_phase_handlers(ngx_conf_t *cf,
     cmcf->phase_engine.handlers = ph;
     n = 0;
 
-    /* 在这里要为stream的各个phase设置handler，
-     * 要为每个handler设置handler和checker */
+    /* 在这里进行复制操作 */
     for (i = 0; i < NGX_STREAM_LOG_PHASE; i++) {
         h = cmcf->phases[i].handlers.elts;
 
         switch (i) {
 
         case NGX_STREAM_PREREAD_PHASE:
+            /* NGX_STREAM_PREREAD_PHASE的handler全部用
+               这个checker */
             checker = ngx_stream_core_preread_phase;
             break;
 
         case NGX_STREAM_CONTENT_PHASE:
-            /* NGX_STREAM_CONTENT_PHASE就指定用这个checker了，
-             * 这个checker连handler一并处理了 */
+            /* NGX_STREAM_CONTENT_PHASE的handler只有一个，
+             * 指定用这个checker */
             ph->checker = ngx_stream_core_content_phase;
             n++;
             ph++;
@@ -374,12 +384,12 @@ ngx_stream_init_phase_handlers(ngx_conf_t *cf,
             continue;
 
         default:
+            /* 其他PHASE的handler全部用这个checker */
             checker = ngx_stream_core_generic_phase;
         }
 
         n += cmcf->phases[i].handlers.nelts;
 
-        /* 最后插入的最先处理？*/
         for (j = cmcf->phases[i].handlers.nelts - 1; j >= 0; j--) {
             ph->checker = checker;
             ph->handler = h[j];
@@ -492,8 +502,7 @@ ngx_stream_optimize_servers(ngx_conf_t *cf, ngx_array_t *ports)
                 continue;
             }
 
-            /* 在解析配置文件的时候为stream创建了ngx_listening_t，
-             * 并且设置了handler */
+            /* 在解析配置文件的时候为stream创建了ngx_listening_t */
             ls = ngx_create_listening(cf, &addr[i].opt.sockaddr.sockaddr,
                                       addr[i].opt.socklen);
             if (ls == NULL) {
@@ -501,6 +510,8 @@ ngx_stream_optimize_servers(ngx_conf_t *cf, ngx_array_t *ports)
             }
 
             ls->addr_ntop = 1;
+            /* listening状态的socket可读后，会调用ngx_event_accept或者
+               ngx_event_recvmsg，这两个函数最终都会调用ls->handler */
             ls->handler = ngx_stream_init_connection;
             ls->pool_size = 256;
             ls->type = addr[i].opt.type;

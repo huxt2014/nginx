@@ -346,7 +346,7 @@ ngx_module_t  ngx_stream_proxy_module = {
 };
 
 
-/* 这个是stream-server-proxy_pass的handler */
+/* stream的content_phase使用这个handler */
 static void
 ngx_stream_proxy_handler(ngx_stream_session_t *s)
 {
@@ -412,6 +412,9 @@ ngx_stream_proxy_handler(ngx_stream_session_t *s)
         u->downstream_buf.pos = p;
         u->downstream_buf.last = p;
 
+        /* 对于tcp，accept之后第一次运行到这里应该就是可读的，
+           所以把c->read放到队列中，暂时不需要放到loop中.
+           ready的作用有点晦涩啊…… */
         if (c->read->ready) {
             ngx_post_event(c->read, &ngx_posted_events);
         }
@@ -649,7 +652,7 @@ ngx_stream_proxy_set_local(ngx_stream_session_t *s, ngx_stream_upstream_t *u,
 }
 
 
-/* 默认stream-server-proxy_pass指令在这里连接upstream */
+/* stream-server-proxy_pass指令在这里发起连接 */
 static void
 ngx_stream_proxy_connect(ngx_stream_session_t *s)
 {
@@ -685,7 +688,7 @@ ngx_stream_proxy_connect(ngx_stream_session_t *s)
     u->state->first_byte_time = (ngx_msec_t) -1;
     u->state->response_time = ngx_current_msec;
 
-    /* 根据配置信息连接upstream */
+    /* 根据配置信息连接upstream，会生成remote socket并且放入loop  */
     rc = ngx_event_connect_peer(&u->peer);
 
     ngx_log_debug1(NGX_LOG_DEBUG_STREAM, c->log, 0, "proxy connect: %i", rc);
@@ -2045,8 +2048,9 @@ ngx_stream_proxy_pass(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
        ngx_stream_core_content_phase会调用cscf->handler */
     cscf = ngx_stream_conf_get_module_srv_conf(cf, ngx_stream_core_module);
 
-    /* 根据stream-server-proxy_pass设置了cscf->handler，
-     * 在解析配置文件的时候完成。 */
+    /* stream的content_phase只会有一个handler，也就是
+       ngx_stream_core_content_phase，这个handler只会调用cscf->handler,
+       这个函数指针在读取配置文件的时候设置。 */
     cscf->handler = ngx_stream_proxy_handler;
 
     value = cf->args->elts;

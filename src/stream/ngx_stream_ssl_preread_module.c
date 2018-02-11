@@ -110,6 +110,7 @@ ngx_stream_ssl_preread_handler(ngx_stream_session_t *s)
         return NGX_DECLINED;
     }
 
+    /* ssl preread仅处理tcp，不处理udp */
     if (c->type != SOCK_STREAM) {
         return NGX_DECLINED;
     }

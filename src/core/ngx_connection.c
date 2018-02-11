@@ -72,6 +72,7 @@ ngx_create_listening(ngx_conf_t *cf, struct sockaddr *sockaddr,
 
     ngx_memcpy(ls->addr_text.data, text, len);
 
+    /* 这个是什么鬼？*/
     ls->fd = (ngx_socket_t) -1;
     ls->type = SOCK_STREAM;
 
@@ -587,6 +588,7 @@ ngx_open_listening_sockets(ngx_cycle_t *cycle)
             }
 #endif
 
+            /* udp的话，就没必要在执行下面的listen了 */
             if (ls[i].type != SOCK_STREAM) {
                 ls[i].fd = s;
                 continue;
@@ -1030,6 +1032,7 @@ ngx_close_listening_sockets(ngx_cycle_t *cycle)
 }
 
 
+/* ngx_connection_t初始化，建立与ngx_event_t的联系 */
 ngx_connection_t *
 ngx_get_connection(ngx_socket_t s, ngx_log_t *log)
 {
@@ -1047,6 +1050,7 @@ ngx_get_connection(ngx_socket_t s, ngx_log_t *log)
         return NULL;
     }
 
+    /* 从缓存池中拿一个 */
     c = ngx_cycle->free_connections;
 
     if (c == NULL) {
@@ -1074,6 +1078,7 @@ ngx_get_connection(ngx_socket_t s, ngx_log_t *log)
 
     ngx_memzero(c, sizeof(ngx_connection_t));
 
+    /* 通过c可以找到ev */
     c->read = rev;
     c->write = wev;
     c->fd = s;
@@ -1090,6 +1095,7 @@ ngx_get_connection(ngx_socket_t s, ngx_log_t *log)
     rev->index = NGX_INVALID_INDEX;
     wev->index = NGX_INVALID_INDEX;
 
+    /* 通过ev可以找到c */
     rev->data = c;
     wev->data = c;
 

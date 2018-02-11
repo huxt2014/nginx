@@ -635,7 +635,7 @@ ngx_stream_limit_conn_init(ngx_conf_t *cf)
 
     cmcf = ngx_stream_conf_get_module_main_conf(cf, ngx_stream_core_module);
 
-    /* stream_limit_conn_module 处理在STREAM_PREACCESS_PHASE */
+    /* stream_limit_conn_module 在STREAM_PREACCESS_PHASE=1处理 */
     h = ngx_array_push(&cmcf->phases[NGX_STREAM_PREACCESS_PHASE].handlers);
     if (h == NULL) {
         return NGX_ERROR;
