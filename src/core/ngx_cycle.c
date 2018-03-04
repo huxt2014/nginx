@@ -200,7 +200,8 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
     ngx_queue_init(&cycle->reusable_connections_queue);
 
 
-    /* 这个数组用于存储所有module的指针 */
+    /* 这个数组用于存储NGX_CORE_MODULE的create_config()所返回的ngx_core_conf_t
+     */
     cycle->conf_ctx = ngx_pcalloc(pool, ngx_max_module * sizeof(void *));
     if (cycle->conf_ctx == NULL) {
         ngx_destroy_pool(pool);
@@ -228,6 +229,7 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
     ngx_strlow(cycle->hostname.data, (u_char *) hostname, cycle->hostname.len);
 
 
+    /* 将ngx_modules中的指针复制到cycle->modules中 */
     if (ngx_cycle_modules(cycle) != NGX_OK) {
         ngx_destroy_pool(pool);
         return NULL;
@@ -235,8 +237,11 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
 
 
     /* 调用所有NGX_CORE_MODULE的create_config()，通常会返回一个ngx_core_conf_t
-     * 类型的指针，内容已经被初始化，存储在全局的cycle中。后续解析NGX_MAIN_CONF
-     * 的时候，又会被传进去。
+     * 类型的指针，内容已经被初始化。得到的ngx_core_conf_t会存储在
+     * cycle->conf_ctx中。后续解析NGX_MAIN_CONF的时候，又会被传进去。
+     *
+     * create_conf和init_conf位于所谓的module context中，某些module可能这两个
+     * 函数都是NULL。
      */
     for (i = 0; cycle->modules[i]; i++) {
         if (cycle->modules[i]->type != NGX_CORE_MODULE) {
@@ -259,6 +264,7 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
     senv = environ;
 
 
+    /* conf用于解析配置文件 */
     ngx_memzero(&conf, sizeof(ngx_conf_t));
     /* STUB: init array ? */
     conf.args = ngx_array_create(pool, 10, sizeof(ngx_str_t));
@@ -274,11 +280,17 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
     }
 
 
+    /* 开始解析配置文件时：
+     *   conf.ctx = cycle->conf_ctx
+     *   conf.module_type = NGX_CORE_MODULE
+     *   conf.cmd_type = NGX_MAIN_CONF
+     * 在解析文件的过程中，conf.ctx、conf.module_type、conf.cmd_type会随着解析
+     * 目标的更改而更改。
+     */
     conf.ctx = cycle->conf_ctx;
     conf.cycle = cycle;
     conf.pool = pool;
     conf.log = log;
-    /* 第一次解析的时候，只会解析NGX_CORE_MODULE的NGX_MAIN_CONF类型的指令 */
     conf.module_type = NGX_CORE_MODULE;
     conf.cmd_type = NGX_MAIN_CONF;
 
@@ -646,7 +658,7 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
 
     pool->log = cycle->log;
 
-    /* 调用所有module的init_module，每次重载配置后也都会调用 */
+    /* 调用所有module的init_module函数，每次重载配置后也都会调用 */
     if (ngx_init_modules(cycle) != NGX_OK) {
         /* fatal */
         exit(1);

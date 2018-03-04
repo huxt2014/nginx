@@ -346,7 +346,8 @@ ngx_module_t  ngx_stream_proxy_module = {
 };
 
 
-/* stream的content_phase使用这个handler */
+/* stream的content_phase使用这个handler，这个函数的主要功能是创建
+   初始化upstream，查询到upstream的配置 */
 static void
 ngx_stream_proxy_handler(ngx_stream_session_t *s)
 {
@@ -390,6 +391,10 @@ ngx_stream_proxy_handler(ngx_stream_session_t *s)
     u->peer.type = c->type;
     u->start_sec = ngx_time();
 
+    /* 如果运行到这里了，那就把write handler和read handler改掉，因为在
+       ngx_stream_init_connection函数中创建session时handler被设置成了
+       ngx_stream_session_handler。当然，在这之前的phase也有可能改掉
+       handler，但最终还是要到这里来。 */
     c->write->handler = ngx_stream_proxy_downstream_handler;
     c->read->handler = ngx_stream_proxy_downstream_handler;
 
@@ -400,6 +405,7 @@ ngx_stream_proxy_handler(ngx_stream_session_t *s)
         return;
     }
 
+    /* tcp需要一个缓冲区，udp的话就不需要了，已经接收完了。*/
     if (c->type == SOCK_STREAM) {
         p = ngx_pnalloc(c->pool, pscf->buffer_size);
         if (p == NULL) {
@@ -412,9 +418,9 @@ ngx_stream_proxy_handler(ngx_stream_session_t *s)
         u->downstream_buf.pos = p;
         u->downstream_buf.last = p;
 
-        /* 对于tcp，accept之后第一次运行到这里应该就是可读的，
-           所以把c->read放到队列中，暂时不需要放到loop中.
-           ready的作用有点晦涩啊…… */
+        /* 对于tcp，accept之后经过了一系列phase，第一次运行到这里应该就是
+           可读的，所以把c->read放到队列中，暂时不需要放到loop中。ready的
+           作用有点晦涩啊…… */
         if (c->read->ready) {
             ngx_post_event(c->read, &ngx_posted_events);
         }

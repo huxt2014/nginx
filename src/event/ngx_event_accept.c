@@ -19,8 +19,10 @@ static void ngx_debug_accepted_connection(ngx_event_conf_t *ecf,
 #endif
 
 
-/* SOCK_STREAM类型处于listen状态的socket可读后
-   调用这个函数，也就是对应的的accept操作... */
+/* SOCK_STREAM类型处于listen状态的socket可读后调用这个函数，主要作用是调用
+   accept，拿到客户端的socket后包装成c：分配pool，设置客户端地址信息，设置
+   c->recv、c->send，设置rev、wev的ready状态。没有设置rev、wev的handler。
+*/
 void
 ngx_event_accept(ngx_event_t *ev)
 {
@@ -113,6 +115,8 @@ ngx_event_accept(ngx_event_t *ev)
                 }
             }
 
+            /* too many files opened in process
+             * || too many files opend in the entire system */
             if (err == NGX_EMFILE || err == NGX_ENFILE) {
                 if (ngx_disable_accept_events((ngx_cycle_t *) ngx_cycle, 1)
                     != NGX_OK)
@@ -121,6 +125,7 @@ ngx_event_accept(ngx_event_t *ev)
                 }
 
                 if (ngx_use_accept_mutex) {
+                    /* 释放accept_mutex，ngx_accept_disabled置1。*/
                     if (ngx_accept_mutex_held) {
                         ngx_shmtx_unlock(&ngx_accept_mutex);
                         ngx_accept_mutex_held = 0;
@@ -140,6 +145,7 @@ ngx_event_accept(ngx_event_t *ev)
         (void) ngx_atomic_fetch_add(ngx_stat_accepted, 1);
 #endif
 
+        /* 当free_connection小于最大允许连接数的1/8时设置disable */
         ngx_accept_disabled = ngx_cycle->connection_n / 8
                               - ngx_cycle->free_connection_n;
 
@@ -235,10 +241,10 @@ ngx_event_accept(ngx_event_t *ev)
         }
 #endif
 
-        /* 留意一下tcp中local socket的rev->ready和wev->ready初始化 */
         rev = c->read;
         wev = c->write;
 
+        /* accept后，新创建的socket应该是可写的，所以将wev->ready置1。 */
         wev->ready = 1;
 
         if (ngx_event_flags & NGX_USE_IOCP_EVENT) {
@@ -329,9 +335,11 @@ ngx_event_accept(ngx_event_t *ev)
 
 #if !(NGX_WIN32)
 
-/* SOCK_DGRAM处于接收状态的socket可读后调用这个函数.
-   强烈质疑当前udp转发的实现策略，这种方式根本无法承载
-   较高的udp流量！！！
+/* SOCK_DGRAM处于接收状态的socket可读后调用这个函数。主要作用是调用recvmsg，
+   将接收状态的socket包装成c：分配pool，保存收到的信息，设置客户端的地址，
+   设置c->send。没有必要设置c-recv，因为这里新生成的c后续根本不会接收消息了。
+
+   强烈质疑当前udp转发的实现策略，这种方式根本无法承载较高的udp流量！！！
    */
 void
 ngx_event_recvmsg(ngx_event_t *ev)
@@ -378,7 +386,6 @@ ngx_event_recvmsg(ngx_event_t *ev)
 
     lc = ev->data;
     ls = lc->listening;
-    /* udp的local socket读一次后就不ready了 */
     ev->ready = 0;
 
     ngx_log_debug2(NGX_LOG_DEBUG_EVENT, ev->log, 0,
@@ -448,7 +455,9 @@ ngx_event_recvmsg(ngx_event_t *ev)
         ngx_accept_disabled = ngx_cycle->connection_n / 8
                               - ngx_cycle->free_connection_n;
 
-        /* 包装成connection，lc貌似就是正在"监听"的端口 */
+        /* 包装成connection，lc貌似就是正在"监听"的端口。
+           这里每接收一个udp包就会消耗掉一个connection，但是个人觉得
+           每个msg.msg_name消耗一个connection会比较好。 */
         c = ngx_get_connection(lc->fd, ev->log);
         if (c == NULL) {
             return;
@@ -663,6 +672,7 @@ ngx_int_t
 ngx_trylock_accept_mutex(ngx_cycle_t *cycle)
 {
     if (ngx_shmtx_trylock(&ngx_accept_mutex)) {
+        /* the lock is previously not be held and now obtained successfully */
 
         ngx_log_debug0(NGX_LOG_DEBUG_EVENT, cycle->log, 0,
                        "accept mutex locked");
@@ -681,6 +691,9 @@ ngx_trylock_accept_mutex(ngx_cycle_t *cycle)
 
         return NGX_OK;
     }
+    /* the lock is previously be hold, or previously not held but acquire
+     * failed. ???
+     */
 
     ngx_log_debug1(NGX_LOG_DEBUG_EVENT, cycle->log, 0,
                    "accept mutex lock failed: %ui", ngx_accept_mutex_held);

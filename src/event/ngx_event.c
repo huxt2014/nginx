@@ -54,6 +54,8 @@ ngx_uint_t            ngx_use_accept_mutex;
 ngx_uint_t            ngx_accept_events;
 ngx_uint_t            ngx_accept_mutex_held;
 ngx_msec_t            ngx_accept_mutex_delay;
+/* this flag is set when  too many files opened or too few free connection
+ * in pool, useful only when use accept mutex */
 ngx_int_t             ngx_accept_disabled;
 
 
@@ -193,8 +195,7 @@ ngx_module_t  ngx_event_core_module = {
 };
 
 
-/* loop中的关键函数，读取事件放入queue，
-   然后再处理事件 */
+/* loop中的关键函数，读取事件放入queue，然后再处理事件。*/
 void
 ngx_process_events_and_timers(ngx_cycle_t *cycle)
 {
@@ -222,17 +223,26 @@ ngx_process_events_and_timers(ngx_cycle_t *cycle)
 
     if (ngx_use_accept_mutex) {
         if (ngx_accept_disabled > 0) {
+            /* too many files || too few free connection in pool */
             ngx_accept_disabled--;
 
         } else {
+            /* if use accept mutex and accept not disabled，try to acquire
+             * the lock. If acquired, ngx_accept_mutex_held = 1 and
+             * ngx_accept_events = 0. If not acquired, all listening fd are
+             * disabled () and ngx_accept_mutex_held = 0. */
             if (ngx_trylock_accept_mutex(cycle) == NGX_ERROR) {
                 return;
             }
 
             if (ngx_accept_mutex_held) {
+                /* acquire mutex succeed，this flag let new coming events
+                 * to be pushed into queue, but not be handled immediatly.
+                 */
                 flags |= NGX_POST_EVENTS;
 
             } else {
+                /* acquire mutex failed，set sleep time if necessary. */
                 if (timer == NGX_TIMER_INFINITE
                     || timer > ngx_accept_mutex_delay)
                 {
@@ -244,8 +254,10 @@ ngx_process_events_and_timers(ngx_cycle_t *cycle)
 
     delta = ngx_current_msec;
 
-    /* 调用select、poll等函数，将event放入queue中.
-       这是一个宏，实际上是ngx_event_actions.process_events */
+    /* 处理io事件，将event放入queue中.
+
+     * 这是一个宏，实际上是ngx_event_actions.process_events，对于epoll，调用
+     * 的是ngx_epoll_process_events */
     (void) ngx_process_events(cycle, timer, flags);
 
     delta = ngx_current_msec - delta;
@@ -253,19 +265,27 @@ ngx_process_events_and_timers(ngx_cycle_t *cycle)
     ngx_log_debug1(NGX_LOG_DEBUG_EVENT, cycle->log, 0,
                    "timer delta: %M", delta);
 
-    /* 处理queue中的event，就是将event从queue中去掉，
-       然后再调用ev->handler  */
+    /* 处理ngx_posted_accept_events中的event：将event从queue中去掉，
+     * 然后再调用ev->handler。
+
+     * 先调用accept，保证响应速度。如果使用了accept_mutex，其他worker在这个
+     * 过程中将无法调用accept，尽快处理完accept后可以尽量快地释放accept_mutex。
+     */
     ngx_event_process_posted(cycle, &ngx_posted_accept_events);
 
     if (ngx_accept_mutex_held) {
+        /* release mutex，give other worker chance to invoke accept */
         ngx_shmtx_unlock(&ngx_accept_mutex);
     }
 
     if (delta) {
+        /* 处理ngx_posted_accept_events后处理到时间的定时事件。
+
+         * 这里delta的处理比较有意思，可以仔细琢磨一下。 */
         ngx_event_expire_timers();
     }
 
-    /* 处理第二个queue中的event */
+    /* 最后处理ngx_posted_events中的event */
     ngx_event_process_posted(cycle, &ngx_posted_events);
 }
 
@@ -480,6 +500,7 @@ ngx_event_module_init(ngx_cycle_t *cycle)
 #endif /* !(NGX_WIN32) */
 
 
+    /* 如果配置了master_process off，后面分配共享内存的工作就不做了。*/
     if (ccf->master == 0) {
         return NGX_OK;
     }
@@ -522,6 +543,7 @@ ngx_event_module_init(ngx_cycle_t *cycle)
     ngx_accept_mutex_ptr = (ngx_atomic_t *) shared;
     ngx_accept_mutex.spin = (ngx_uint_t) -1;
 
+    /* 并没没有使用真正的锁，而是使用atomic类型进行设置和判断 */
     if (ngx_shmtx_create(&ngx_accept_mutex, (ngx_shmtx_sh_t *) shared,
                          cycle->lock_file.data)
         != NGX_OK)
@@ -574,6 +596,7 @@ ngx_timer_signal_handler(int signo)
 #endif
 
 
+/* worker process初始化时会调用 */
 static ngx_int_t
 ngx_event_process_init(ngx_cycle_t *cycle)
 {
@@ -692,7 +715,9 @@ ngx_event_process_init(ngx_cycle_t *cycle)
 
 #endif
 
-    /* 最多只允许有这么多connection？*/
+    /* 初始化connection池，最多只允许有这么多connection。池子在进程内共享，
+       存在cycle中。listen状态的socket、accept得到的socket、udp的socket
+       包装成c时，都是从这个池子拿。 */
     cycle->connections =
         ngx_alloc(sizeof(ngx_connection_t) * cycle->connection_n, cycle->log);
     if (cycle->connections == NULL) {
@@ -701,6 +726,7 @@ ngx_event_process_init(ngx_cycle_t *cycle)
 
     c = cycle->connections;
 
+    /* 创建read_events，与connection池一一对应 */
     cycle->read_events = ngx_alloc(sizeof(ngx_event_t) * cycle->connection_n,
                                    cycle->log);
     if (cycle->read_events == NULL) {
@@ -713,6 +739,7 @@ ngx_event_process_init(ngx_cycle_t *cycle)
         rev[i].instance = 1;
     }
 
+    /* 创建write_events，与connection池一一对应 */
     cycle->write_events = ngx_alloc(sizeof(ngx_event_t) * cycle->connection_n,
                                     cycle->log);
     if (cycle->write_events == NULL) {
@@ -731,6 +758,8 @@ ngx_event_process_init(ngx_cycle_t *cycle)
         i--;
 
         c[i].data = next;
+        /* connection与event建立关系，通过c可以找到event，并且connection一定
+           会有read和write。 */
         c[i].read = &cycle->read_events[i];
         c[i].write = &cycle->write_events[i];
         c[i].fd = (ngx_socket_t) -1;
@@ -738,7 +767,7 @@ ngx_event_process_init(ngx_cycle_t *cycle)
         next = &c[i];
     } while (i);
 
-    /* 有点像链表的感觉？*/
+    /* 使用链表管理池子中connection的获取与释放 */
     cycle->free_connections = next;
     cycle->free_connection_n = cycle->connection_n;
 

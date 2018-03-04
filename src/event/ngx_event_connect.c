@@ -17,6 +17,8 @@ static ngx_int_t ngx_event_connect_set_transparent(ngx_peer_connection_t *pc,
 #endif
 
 
+/* 为peer创建socket，如果peer有local则bind到local，connect到peer，wev->ready
+ * 置1。*/
 ngx_int_t
 ngx_event_connect_peer(ngx_peer_connection_t *pc)
 {
@@ -181,6 +183,8 @@ ngx_event_connect_peer(ngx_peer_connection_t *pc)
 
     c->number = ngx_atomic_fetch_add(ngx_connection_counter, 1);
 
+    /* epoll定义了这个函数，成狗返回后fd的NGX_READ_EVENT NGX_READ_WRITE都会
+       被监听，而不是仅监听NGX_READ_EVENT */
     if (ngx_add_conn) {
         if (ngx_add_conn(c) == NGX_ERROR) {
             goto failed;

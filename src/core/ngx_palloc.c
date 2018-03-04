@@ -15,6 +15,34 @@ static void *ngx_palloc_block(ngx_pool_t *pool, size_t size);
 static void *ngx_palloc_large(ngx_pool_t *pool, size_t size);
 
 
+/* 创建大小为size的pool，成功时返回pool的地址。pool的地址会对齐
+ * NGX_POOL_ALIGNMENT(默认为16，参考posix_memalign)，所以size的大小最好是
+ * NGX_POOL_ALIGNMENT的倍数。
+
+ * size包含了ngx_pool_t的部分，所以pool中实际可用大小是
+ * size - sizeof(ngx_pool_t)。size必须大于NGX_MIN_POOL_SIZE:
+ *     ngx_align((sizeof(ngx_pool_t) + 2 * sizeof(ngx_pool_large_t)),
+ *               NGX_POOL_ALIGNMENT)
+
+ * pool->max取size - sizeof(ngx_pool_t)与NGX_MAX_ALLOC_FROM_POOL中的最小值，
+ * 后续从该pool分配内存时如果需要分配的大小大于max，则从large分配，不然就从pool
+ * 分配。Linux中，NGX_MAX_ALLOC_FROM_POOL默认大小为4095。
+
+  |   pool head       | for small alloc   |
+  +-------------------+-------------------+
+  |..|large|..|next|..|                   |
+  +-----|-------|-----+-------------------+
+        |       |
+    +---|---+   |   +-----------+------------------+
+    | large |   +-->| pool head |  for small alloc |
+    +---|---+       +-----|-----+----------------=-+
+        |                 |
+    +---|---+             |   +-----------+------------------+
+    | large |             +-->| pool head |  for small alloc |
+    +---|---+                 +-----|-----+------------------+
+       ...                          |
+                                    +-> ...
+*/
 ngx_pool_t *
 ngx_create_pool(size_t size, ngx_log_t *log)
 {
@@ -31,6 +59,7 @@ ngx_create_pool(size_t size, ngx_log_t *log)
     p->d.failed = 0;
 
     size = size - sizeof(ngx_pool_t);
+    /* NGX_MAX_ALLOC_FROM_POOL = ngx_pagesize - 1, i.e. 4095 on x86. */
     p->max = (size < NGX_MAX_ALLOC_FROM_POOL) ? size : NGX_MAX_ALLOC_FROM_POOL;
 
     p->current = p;
@@ -43,6 +72,7 @@ ngx_create_pool(size_t size, ngx_log_t *log)
 }
 
 
+/* 依次调用pool->cleanup，依次释放large，最后依次释放pool */
 void
 ngx_destroy_pool(ngx_pool_t *pool)
 {
@@ -119,6 +149,7 @@ ngx_reset_pool(ngx_pool_t *pool)
 }
 
 
+/* 如果size大于pool->max，则从large，否则从pool中分配 */
 void *
 ngx_palloc(ngx_pool_t *pool, size_t size)
 {
@@ -157,6 +188,7 @@ ngx_palloc_small(ngx_pool_t *pool, size_t size, ngx_uint_t align)
         m = p->d.last;
 
         if (align) {
+            /* NGX_ALIGNMENT = sizeof(unsigned long) */
             m = ngx_align_ptr(m, NGX_ALIGNMENT);
         }
 
@@ -210,6 +242,7 @@ ngx_palloc_block(ngx_pool_t *pool, size_t size)
 }
 
 
+/* 如果需要重复分配／释放large，推荐最新分配的large最先释放 */
 static void *
 ngx_palloc_large(ngx_pool_t *pool, size_t size)
 {
@@ -224,6 +257,8 @@ ngx_palloc_large(ngx_pool_t *pool, size_t size)
 
     n = 0;
 
+    /* 看看[0, 3]中有没有坑位，如果有的话就直接使用，没有的话需要从pool中
+     * 新分配一个坑位 */
     for (large = pool->large; large; large = large->next) {
         if (large->alloc == NULL) {
             large->alloc = p;
@@ -241,6 +276,7 @@ ngx_palloc_large(ngx_pool_t *pool, size_t size)
         return NULL;
     }
 
+    /* 将新创建的坑位放在链表的头部 */
     large->alloc = p;
     large->next = pool->large;
     pool->large = large;
@@ -274,6 +310,8 @@ ngx_pmemalign(ngx_pool_t *pool, size_t size, size_t alignment)
 }
 
 
+/* 回收一个large，如果p是从pool中分配得到的，貌似也不会有什么大的影响，
+ * 只是浪费一些寻找的时间 */
 ngx_int_t
 ngx_pfree(ngx_pool_t *pool, void *p)
 {

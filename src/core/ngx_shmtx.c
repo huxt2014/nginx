@@ -58,7 +58,16 @@ ngx_shmtx_destroy(ngx_shmtx_t *mtx)
 #endif
 }
 
+/* return 0 if 1) the lock is already be held. 2) the lock is not be held but
+ * acquire failed.
 
+ * return 1 if the lock is not be held and acquire succeed.
+
+ * ngx_atomic_cmp_set(lock, old, new):
+ *     if *(mtx->lock) == old, set *(mtx->lock) = new and return 1
+
+ * 注意：避免重复获取锁
+ */
 ngx_uint_t
 ngx_shmtx_trylock(ngx_shmtx_t *mtx)
 {

@@ -9,11 +9,14 @@
 #include <ngx_core.h>
 
 
+/* 调用ngx_palloc分配一个buff，可能从pool分配，也有可能拿到一个large */
 ngx_buf_t *
 ngx_create_temp_buf(ngx_pool_t *pool, size_t size)
 {
     ngx_buf_t *b;
 
+    /* #define ngx_calloc_buf(pool) ngx_pcalloc(pool, sizeof(ngx_buf_t))
+     */
     b = ngx_calloc_buf(pool);
     if (b == NULL) {
         return NULL;

@@ -284,6 +284,7 @@ main(int argc, char *const *argv)
         return 1;
     }
 
+    /* 确认ngx_modules中所有module的index */
     if (ngx_preinit_modules() != NGX_OK) {
         return 1;
     }

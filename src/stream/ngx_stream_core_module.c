@@ -262,6 +262,7 @@ ngx_stream_core_preread_phase(ngx_stream_session_t *s,
             break;
         }
 
+        /* 如果不可读了，那么设置定时任务，一段事件后再读 */
         if (!c->read->ready) {
             if (ngx_handle_read_event(c->read, 0) != NGX_OK) {
                 rc = NGX_ERROR;
@@ -512,6 +513,7 @@ ngx_stream_core_server(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     ngx_stream_core_srv_conf_t   *cscf, **cscfp;
     ngx_stream_core_main_conf_t  *cmcf;
 
+    /* 为每一个server创建ctx */
     ctx = ngx_pcalloc(cf->pool, sizeof(ngx_stream_conf_ctx_t));
     if (ctx == NULL) {
         return NGX_CONF_ERROR;
@@ -552,6 +554,7 @@ ngx_stream_core_server(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 
     cmcf = ctx->main_conf[ngx_stream_core_module.ctx_index];
 
+    /* 新创建的srv_conf被放入了core_module 的main_conf 的servers中 */
     cscfp = ngx_array_push(&cmcf->servers);
     if (cscfp == NULL) {
         return NGX_CONF_ERROR;
@@ -613,6 +616,7 @@ ngx_stream_core_listen(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
         return NGX_CONF_ERROR;
     }
 
+    /* listen 放到core_module main_conf 的listen中 */
     cmcf = ngx_stream_conf_get_module_main_conf(cf, ngx_stream_core_module);
 
     ls = ngx_array_push(&cmcf->listen);

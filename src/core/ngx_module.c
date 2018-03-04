@@ -10,6 +10,7 @@
 #include <ngx_core.h>
 
 
+/* 有点奇怪的限制 */
 #define NGX_MAX_DYNAMIC_MODULES  128
 
 
@@ -22,6 +23,9 @@ ngx_uint_t         ngx_max_module;
 static ngx_uint_t  ngx_modules_n;
 
 
+/* 运行auto/configure后会生成objs/ngx_modules.c，这个文件中定义了所有的
+   ngx_modules。这个函数的作用是确认各个module的index、name，同时确认
+   ngx_modules_n和ngx_max_module。 */
 ngx_int_t
 ngx_preinit_modules(void)
 {
@@ -39,6 +43,7 @@ ngx_preinit_modules(void)
 }
 
 
+/* 将ngx_modules中的指针复制到cycle->modules中 */
 ngx_int_t
 ngx_cycle_modules(ngx_cycle_t *cycle)
 {

@@ -257,6 +257,9 @@ struct ngx_module_s {
 };
 
 
+/* NGX_CORE_MODULE使用的ctx，保存了create_conf、init_conf函数指针。
+ * NGX_CORE_MODULE所创建的ctx会存在cycle->module_ctx中。
+ */
 typedef struct {
     ngx_str_t             name;
     void               *(*create_conf)(ngx_cycle_t *cycle);

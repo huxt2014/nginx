@@ -48,12 +48,13 @@ static ngx_command_t  ngx_stream_commands[] = {
 
 
 static ngx_core_module_t  ngx_stream_module_ctx = {
-    ngx_string("stream"),
-    NULL,
-    NULL
+    ngx_string("stream"),                  /* name */
+    NULL,                                  /* create_conf */
+    NULL                                   /* init_conf */
 };
 
 
+/* 这个module的地址最终会被存入ngx_modules以及cycle->modules */
 ngx_module_t  ngx_stream_module = {
     NGX_MODULE_V1,
     &ngx_stream_module_ctx,                /* module context */
@@ -85,7 +86,8 @@ ngx_stream_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     ngx_stream_core_main_conf_t   *cmcf;
 
     /* conf是在create_conf中创建的，并存储在全局cycle中，解析配置文件的时候
-     * 又会被传入进来，可以用来检测是否有重复的配置项。*/
+     * 又会被传入进来，可以用来检测是否有重复的配置项。 stream module的
+     * create_conf貌似为NULL，所以在这里创建。 */
     if (*(ngx_stream_conf_ctx_t **) conf) {
         return "is duplicate";
     }
@@ -97,6 +99,7 @@ ngx_stream_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
         return NGX_CONF_ERROR;
     }
 
+    /* ngx_stream_conf_ctx_t类型的指针存在cycle->conf_ctx中 */
     *(ngx_stream_conf_ctx_t **) conf = ctx;
 
     /* count the number of the stream modules and set up their indices */
@@ -513,6 +516,7 @@ ngx_stream_optimize_servers(ngx_conf_t *cf, ngx_array_t *ports)
             /* listening状态的socket可读后，会调用ngx_event_accept或者
                ngx_event_recvmsg，这两个函数最终都会调用ls->handler */
             ls->handler = ngx_stream_init_connection;
+            /* 指定后续新建连接使用pool的size */
             ls->pool_size = 256;
             ls->type = addr[i].opt.type;
 

@@ -17,9 +17,16 @@ static u_char *ngx_stream_log_error(ngx_log_t *log, u_char *buf, size_t len);
 static void ngx_stream_proxy_protocol_handler(ngx_event_t *rev);
 
 
-/* listening状态的socket可读后会调用ngx_event_accept或者
-   ngx_event_recvmsg，这两个函数会调用ls->handler。对于
-   stream，ls-handler就是这个函数。 */
+/* listening状态的socket可读后会调用ngx_event_accept或者ngx_event_recvmsg，
+   获得客户端的socket包装成connection后，这两个函数会调用ls->handler。对于
+   stream，ls-handler就是这个函数。
+
+   这个函数的主要作用是初始化session：找到listening port的配置，将相关配置信息
+   存入session，将c->read->handler设置成ngx_stream_session_handler，调用该函数
+   开始session的第一次处理(也就是处理phase)。
+
+   注意区分c->recv和c->read->handler的区别。
+*/
 void
 ngx_stream_init_connection(ngx_connection_t *c)
 {
@@ -45,6 +52,7 @@ ngx_stream_init_connection(ngx_connection_t *c)
 
     port = c->listening->servers;
 
+    /* 获取配置信息，待确认！*/
     if (port->naddrs > 1) {
 
         /*
@@ -118,8 +126,7 @@ ngx_stream_init_connection(ngx_connection_t *c)
         }
     }
 
-    /* 不管是tcp还是udp，都会创建一个session，
-     * session里面会有local socket */
+    /* 不管是tcp还是udp，都会创建一个session，session里面会有local socket */
     s = ngx_pcalloc(c->pool, sizeof(ngx_stream_session_t));
     if (s == NULL) {
         ngx_stream_close_connection(c);
@@ -139,7 +146,7 @@ ngx_stream_init_connection(ngx_connection_t *c)
         s->received += c->buffer->last - c->buffer->pos;
     }
 
-    /* 这个是local socket */
+    /* 这个是local socket，通过c可以找到session */
     s->connection = c;
     c->data = s;
 
@@ -180,10 +187,11 @@ ngx_stream_init_connection(ngx_connection_t *c)
     s->start_sec = tp->sec;
     s->start_msec = tp->msec;
 
-    /* 将local socket的read事件处理函数改成了这个,但是感觉到这里
-       local socket依旧没有放入loop。毕竟对于udp来说local socket
-       已经在loop当中了，不应该重复放入loop。不过一旦rev被放入loop，
-       那么对应的handler就是ngx_stream_session_handler */
+    /* 将local socket的read事件处理函数改成了这个,但是感觉到这里local socket
+       依旧没有放入loop。毕竟对于udp来说local socket已经在loop当中了，不应该
+       重复放入loop。如果重复放入loop，那么一次读事件即会触发recvmsg，也会
+       触发ngx_stream_session_handler。具体情况待确认，毕竟loop那一块具体逻辑
+       还比较模糊。*/
     rev = c->read;
     rev->handler = ngx_stream_session_handler;
 

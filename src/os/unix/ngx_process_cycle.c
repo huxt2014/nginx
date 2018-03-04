@@ -770,6 +770,8 @@ ngx_worker_process_cycle(ngx_cycle_t *cycle, void *data)
             if (!ngx_exiting) {
                 ngx_exiting = 1;
                 ngx_set_shutdown_timer(cycle);
+                /* 关闭listening sockets，loop会继续运行，直到所有已经建立
+                   了的连接自己断开了，或者超时。*/
                 ngx_close_listening_sockets(cycle);
                 ngx_close_idle_connections(cycle);
             }

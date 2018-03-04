@@ -176,6 +176,7 @@ ngx_conf_parse(ngx_conf_t *cf, ngx_str_t *filename)
     prev = NULL;
 #endif
 
+    /* 如果传入了文件名，那么就解析文件 */
     if (filename) {
 
         /* open configuration file */
@@ -191,6 +192,7 @@ ngx_conf_parse(ngx_conf_t *cf, ngx_str_t *filename)
 
         prev = cf->conf_file;
 
+        /* cf->conf_file的类型有可能是ngx_str_t，在这里变成了ngx_conf_file_t */
         cf->conf_file = &conf_file;
 
         if (ngx_fd_info(fd, &cf->conf_file->file.info) == NGX_FILE_ERROR) {
@@ -234,6 +236,7 @@ ngx_conf_parse(ngx_conf_t *cf, ngx_str_t *filename)
             cf->conf_file->dump = NULL;
         }
 
+    /* 如果没有传入文件名，那么可能是解析block */
     } else if (cf->conf_file->file.fd != NGX_INVALID_FILE) {
 
         type = parse_block;
@@ -294,7 +297,6 @@ ngx_conf_parse(ngx_conf_t *cf, ngx_str_t *filename)
         }
 
         /* rc == NGX_OK || rc == NGX_CONF_BLOCK_START */
-        /* 读到;或者{才会调用handler */
 
         if (cf->handler) {
 
@@ -323,6 +325,7 @@ ngx_conf_parse(ngx_conf_t *cf, ngx_str_t *filename)
         }
 
 
+        /* 读到;或者{才会调用handler */
         rc = ngx_conf_handler(cf, rc);
 
         if (rc == NGX_ERROR) {
@@ -372,8 +375,10 @@ ngx_conf_handler(ngx_conf_t *cf, ngx_int_t last)
 
     found = 0;
 
-    /* 在配置文件中读到;或者{才会到这里 */
-    /* 遍历每个module的每个commands配置，用name与module_type进行匹配 */
+    /* 在配置文件中读到;或者{才会到这里。
+     * 遍历每个module的每个commands配置，用cmd->name、cf->module_type、
+     * cmd->type进行匹配
+     */
     for (i = 0; cf->cycle->modules[i]; i++) {
 
         cmd = cf->cycle->modules[i]->commands;
@@ -459,6 +464,7 @@ ngx_conf_handler(ngx_conf_t *cf, ngx_int_t last)
                 conf = ((void **) cf->ctx)[cf->cycle->modules[i]->index];
 
             } else if (cmd->type & NGX_MAIN_CONF) {
+                /* 如果是NGX_MAIN_CONF，cf->ctx = cycle->conf_ctx */
                 conf = &(((void **) cf->ctx)[cf->cycle->modules[i]->index]);
 
             } else if (cf->ctx) {

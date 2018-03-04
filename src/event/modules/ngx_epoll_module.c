@@ -12,6 +12,7 @@
 
 #if (NGX_TEST_BUILD_EPOLL)
 
+/* 参考 man epoll_ctl，man epoll */
 /* epoll declarations */
 
 #define EPOLLIN        0x001
@@ -252,8 +253,12 @@ ngx_epoll_aio_init(ngx_cycle_t *cycle, ngx_epoll_conf_t *epcf)
     struct epoll_event  ee;
 
 #if (NGX_HAVE_SYS_EVENTFD_H)
+    /* kernel中为该fd维护了一个unsigned int，进程可以读写这个值，可以通过
+       epoll等监控该fd的读写状态。参考 man eventfd。  */
     ngx_eventfd = eventfd(0, 0);
 #else
+    /* invoking a system call that has no wrapper function in the C library.
+       参考man syscall。*/
     ngx_eventfd = syscall(SYS_eventfd, 0);
 #endif
 
@@ -327,6 +332,7 @@ ngx_epoll_init(ngx_cycle_t *cycle, ngx_msec_t timer)
     epcf = ngx_event_get_conf(cycle->conf_ctx, ngx_epoll_module);
 
     if (ep == -1) {
+        /* Since Linux 2.6.8, the size argument is ignored. */
         ep = epoll_create(cycle->connection_n / 2);
 
         if (ep == -1) {
@@ -355,6 +361,7 @@ ngx_epoll_init(ngx_cycle_t *cycle, ngx_msec_t timer)
             ngx_free(event_list);
         }
 
+        /* epoll_wait中最多可以处理nevents数量的event */
         event_list = ngx_alloc(sizeof(struct epoll_event) * epcf->events,
                                cycle->log);
         if (event_list == NULL) {
@@ -574,7 +581,15 @@ ngx_epoll_done(ngx_cycle_t *cycle)
     nevents = 0;
 }
 
+/* 添加ev对应connection的监听状态，监听状态通过event参数传入，通常为
+ * NGX_READ_EVENT或者NGX_READ_WRITE。flags可以用于添加其他epoll相关的监听状态。
+ * 成功返回后，ev->active置为1。
 
+ * 由于connection同时关联了rev和wev，添加某一个监听状态时需要考虑另外一个ev。
+ * 例如，当添加NGX_READ_EVENT时，需要考虑wev。如果wev->active是0，那么会使用
+ * EPOLL_CTL_ADD。如果wev->active是1，那么会使用EPOLL_CTL_MOD。
+ *
+ * 注意：对一个fd重复使用EPOLL_CTL_ADD会返回错误。*/
 static ngx_int_t
 ngx_epoll_add_event(ngx_event_t *ev, ngx_int_t event, ngx_uint_t flags)
 {
@@ -639,6 +654,17 @@ ngx_epoll_add_event(ngx_event_t *ev, ngx_int_t event, ngx_uint_t flags)
 }
 
 
+/* 删除ev对应connection的监听状态， 监听状态通过event参数传入，通常为
+ * NGX_READ_EVENT或者NGX_READ_WRITE。成功返回后，ev->active置为0。
+
+ * 由于connection同时关联了rev和wev，删除某一个监听状态时需要考虑另外一个ev。
+ * 例如，当删除NGX_READ_EVENT时，需要考虑wev。如果wev->active是0，那么会使用
+ * EPOLL_CTL_DEL。如果wev->active是1，那么会使用EPOLL_CTL_MOD，此时flags可以
+ * 用于添加其他监听状态。
+
+ * 注意：仅仅在与connection关联的fd确实已经close情况下才可在flags中使用
+ * NGX_CLOSE_EVENT。此时不调用epoll_ctl，仅将ev->active置0。
+*/
 static ngx_int_t
 ngx_epoll_del_event(ngx_event_t *ev, ngx_int_t event, ngx_uint_t flags)
 {
@@ -697,6 +723,9 @@ ngx_epoll_del_event(ngx_event_t *ev, ngx_int_t event, ngx_uint_t flags)
 }
 
 
+/* 使用EPOLL_CTL_ADD，为connection对应的fd添加EPOLLIN、EPOLLOUT、EPOLLET、
+ * EPOLLRDHUP状态，并且将rev->active和wev->active都置1。
+ */
 static ngx_int_t
 ngx_epoll_add_connection(ngx_connection_t *c)
 {
@@ -721,6 +750,12 @@ ngx_epoll_add_connection(ngx_connection_t *c)
 }
 
 
+/* 使用EPOLL_CTL_DEL删除connection对应的fd，将wev->active、rev->active置0。
+   flags可以使用NGX_CLOSE_EVENT，注意事项参考ngx_epoll_del_event。
+
+ * 注意：仅仅在与connection关联的fd确实已经close情况下才可在flags中使用
+ * NGX_CLOSE_EVENT。此时不调用epoll_ctl，仅将ev->active置0。
+ */
 static ngx_int_t
 ngx_epoll_del_connection(ngx_connection_t *c, ngx_uint_t flags)
 {
@@ -780,6 +815,12 @@ ngx_epoll_notify(ngx_event_handler_pt handler)
 #endif
 
 
+/* 调用epoll_wait获得读写事件，ev->ready置1。
+
+ * 如果flags设置了NGX_POST_EVENTS（启用了accept_mutex时），那么获得的事件会放入
+ * 队列当中（ngx_posted_accept_events或者ngx_posted_events），否则会立即调用
+ * handler。
+ */
 static ngx_int_t
 ngx_epoll_process_events(ngx_cycle_t *cycle, ngx_msec_t timer, ngx_uint_t flags)
 {
@@ -880,6 +921,10 @@ ngx_epoll_process_events(ngx_cycle_t *cycle, ngx_msec_t timer, ngx_uint_t flags)
         }
 #endif
 
+        /* 如果获得了EPOLLIN事件并且rev->active为1，那么处理对应的ev。
+
+         * 会存在fd注册了EPOLLIN、获得了EPOLLIN事件，但是rev->active为0
+         * 的情况吗？*/
         if ((revents & EPOLLIN) && rev->active) {
 
 #if (NGX_HAVE_EPOLLRDHUP)

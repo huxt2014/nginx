@@ -41,11 +41,15 @@ struct ngx_event_s {
      * the event was passed or would be passed to a kernel;
      * in aio mode - operation was posted.
      */
+    /* 用于判断event是否正在被监听，主要使用场景见ngx_add_event、ngx_del_event、
+     * ngx_process_events等。 */
     unsigned         active:1;
 
     unsigned         disabled:1;
 
     /* the ready event; in aio mode 0 means that no operation can be posted */
+    /* 当前event处于可读／可写状态，一个使用场景是accept后创建了新的socket时，
+     * 相关状态是ready的，那么直接可以放到posted_queue中。*/
     unsigned         ready:1;
 
     unsigned         oneshot:1;

@@ -16,6 +16,8 @@ ngx_os_io_t  ngx_io;
 static void ngx_drain_connections(ngx_cycle_t *cycle);
 
 
+/* 在cycle->listening中添加一个ls，设置好地址信息，将ls->type设置为SOCK_STREAM。
+ */
 ngx_listening_t *
 ngx_create_listening(ngx_conf_t *cf, struct sockaddr *sockaddr,
     socklen_t socklen)
@@ -92,6 +94,7 @@ ngx_create_listening(ngx_conf_t *cf, struct sockaddr *sockaddr,
 }
 
 
+/* 将ls复制到cycle->listening中，如果有n个worker process，则会复制n个ls。*/
 ngx_int_t
 ngx_clone_listening(ngx_conf_t *cf, ngx_listening_t *ls)
 {
@@ -112,6 +115,7 @@ ngx_clone_listening(ngx_conf_t *cf, ngx_listening_t *ls)
 
     for (n = 1; n < ccf->worker_processes; n++) {
 
+        /* 待确认 */
         /* create a socket for each worker process */
 
         ls = ngx_array_push(&cf->cycle->listening);
@@ -382,6 +386,8 @@ ngx_set_inherited_sockets(ngx_cycle_t *cycle)
 }
 
 
+/* 对于还未创建fd的ls，调用socket()创建s，调用bind，对于SOCK_STREAM还会调用
+ * listen。 */
 ngx_int_t
 ngx_open_listening_sockets(ngx_cycle_t *cycle)
 {
@@ -588,7 +594,7 @@ ngx_open_listening_sockets(ngx_cycle_t *cycle)
             }
 #endif
 
-            /* udp的话，就没必要在执行下面的listen了 */
+            /* udp的话，就没必要再执行下面的listen了 */
             if (ls[i].type != SOCK_STREAM) {
                 ls[i].fd = s;
                 continue;
@@ -1032,7 +1038,7 @@ ngx_close_listening_sockets(ngx_cycle_t *cycle)
 }
 
 
-/* ngx_connection_t初始化，建立与ngx_event_t的联系 */
+/* 从连接池获取一个connection，每个connection一定会有rev、wev。 */
 ngx_connection_t *
 ngx_get_connection(ngx_socket_t s, ngx_log_t *log)
 {
@@ -1067,8 +1073,10 @@ ngx_get_connection(ngx_socket_t s, ngx_log_t *log)
     }
 
     ngx_cycle->free_connections = c->data;
+    /* 获取一个connection后，可用数减1 */
     ngx_cycle->free_connection_n--;
 
+    /* 如果之前不存在fd->c的映射的话，创建s->connection的映射 */
     if (ngx_cycle->files && ngx_cycle->files[s] == NULL) {
         ngx_cycle->files[s] = c;
     }
@@ -1076,9 +1084,9 @@ ngx_get_connection(ngx_socket_t s, ngx_log_t *log)
     rev = c->read;
     wev = c->write;
 
+    /* 初始化connection，仅保留最基本的关联关系  */
     ngx_memzero(c, sizeof(ngx_connection_t));
 
-    /* 通过c可以找到ev */
     c->read = rev;
     c->write = wev;
     c->fd = s;
@@ -1086,6 +1094,7 @@ ngx_get_connection(ngx_socket_t s, ngx_log_t *log)
 
     instance = rev->instance;
 
+    /* 初始化rev、wev，仅保留最基本的关联关系  */
     ngx_memzero(rev, sizeof(ngx_event_t));
     ngx_memzero(wev, sizeof(ngx_event_t));
 
@@ -1095,7 +1104,6 @@ ngx_get_connection(ngx_socket_t s, ngx_log_t *log)
     rev->index = NGX_INVALID_INDEX;
     wev->index = NGX_INVALID_INDEX;
 
-    /* 通过ev可以找到c */
     rev->data = c;
     wev->data = c;
 
@@ -1105,6 +1113,10 @@ ngx_get_connection(ngx_socket_t s, ngx_log_t *log)
 }
 
 
+/* 将connection放回pool，如果存在fd到该c的映射，则取消fd->c的映射。
+
+ * 不会修改／释放connection相关的资源，如果需要修改／释放其他资源，需要进行
+ * 额外的操作。参考ngx_close_connection。 */
 void
 ngx_free_connection(ngx_connection_t *c)
 {
@@ -1118,6 +1130,14 @@ ngx_free_connection(ngx_connection_t *c)
 }
 
 
+/* 将connection放回pool（同ngx_free_connection），同时释放connection相关的
+ * 资源。：
+ *   1) 删除c->read、c->write的定时任务，并且从posted_queue中删除。
+ *   2) 如果c->shared为0，那么关闭connection相关的fd，并且取消事件监听。
+ *   3) resuable的相关设置。
+
+ * 注意：如果connection未关联fd，那么不会进行任何操作，仅在日志中记录。
+ */
 void
 ngx_close_connection(ngx_connection_t *c)
 {
