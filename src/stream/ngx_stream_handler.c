@@ -187,11 +187,9 @@ ngx_stream_init_connection(ngx_connection_t *c)
     s->start_sec = tp->sec;
     s->start_msec = tp->msec;
 
-    /* 将local socket的read事件处理函数改成了这个,但是感觉到这里local socket
-       依旧没有放入loop。毕竟对于udp来说local socket已经在loop当中了，不应该
-       重复放入loop。如果重复放入loop，那么一次读事件即会触发recvmsg，也会
-       触发ngx_stream_session_handler。具体情况待确认，毕竟loop那一块具体逻辑
-       还比较模糊。*/
+    /* 将local socket的read事件处理函数改成了这个，到这里tcp socket有可能已经
+     * 被放入了io事件监听函数，udp socket一直处于io事件监听状态。
+     */
     rev = c->read;
     rev->handler = ngx_stream_session_handler;
 
@@ -213,6 +211,7 @@ ngx_stream_init_connection(ngx_connection_t *c)
         }
     }
 
+    /* 如果使用了accept_mutex，那么放入队列稍后处理，不然就直接开始phase。*/
     if (ngx_use_accept_mutex) {
         ngx_post_event(rev, &ngx_posted_events);
         return;

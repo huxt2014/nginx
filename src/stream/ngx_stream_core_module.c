@@ -469,6 +469,7 @@ ngx_stream_core_merge_srv_conf(ngx_conf_t *cf, void *parent, void *child)
         return NGX_CONF_ERROR;
     }
 
+    /* 如果没有配置error_log，使用cycle->new_log */
     if (conf->error_log == NULL) {
         if (prev->error_log) {
             conf->error_log = prev->error_log;
@@ -492,6 +493,7 @@ ngx_stream_core_merge_srv_conf(ngx_conf_t *cf, void *parent, void *child)
 }
 
 
+/* stream的error_log记录在cscf->error_log中 */
 static char *
 ngx_stream_core_error_log(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 {

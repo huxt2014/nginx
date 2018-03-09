@@ -522,6 +522,8 @@ ngx_stream_optimize_servers(ngx_conf_t *cf, ngx_array_t *ports)
 
             cscf = addr->opt.ctx->srv_conf[ngx_stream_core_module.ctx_index];
 
+            /* 设置ls的log，默认使用cscf->error_log，以及ngx_accept_log_error
+             */
             ls->logp = cscf->error_log;
             ls->log.data = &ls->addr_text;
             ls->log.handler = ngx_accept_log_error;

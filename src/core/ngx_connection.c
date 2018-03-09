@@ -672,6 +672,7 @@ ngx_configure_listening_sockets(ngx_cycle_t *cycle)
     ls = cycle->listening.elts;
     for (i = 0; i < cycle->listening.nelts; i++) {
 
+        /* 将logp中的内容复制到ls.log中 */
         ls[i].log = *ls[i].logp;
 
         if (ls[i].rcvbuf != -1) {

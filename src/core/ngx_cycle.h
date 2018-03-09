@@ -40,7 +40,7 @@ struct ngx_cycle_s {
     ngx_pool_t               *pool;
 
     ngx_log_t                *log;
-    ngx_log_t                 new_log;
+    ngx_log_t                 new_log;         /* 作为error_log链表的head */
 
     ngx_uint_t                log_use_stderr;  /* unsigned  log_use_stderr:1; */
 

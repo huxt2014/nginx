@@ -418,9 +418,9 @@ ngx_stream_proxy_handler(ngx_stream_session_t *s)
         u->downstream_buf.pos = p;
         u->downstream_buf.last = p;
 
-        /* 对于tcp，accept之后经过了一系列phase，第一次运行到这里应该就是
-           可读的，所以把c->read放到队列中，暂时不需要放到loop中。ready的
-           作用有点晦涩啊…… */
+        /* 对于tcp，accept之后经过了一系列phase，第一次运行到这里如果还是
+         * 可读的话，那么直接把c->read放到队列中。
+         */
         if (c->read->ready) {
             ngx_post_event(c->read, &ngx_posted_events);
         }

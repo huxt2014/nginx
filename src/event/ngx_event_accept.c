@@ -311,6 +311,8 @@ ngx_event_accept(ngx_event_t *ev)
         }
 #endif
 
+        /* tcp中，如果使用了epoll，那么在accept后就对新创建的socket进行io监听
+         */
         if (ngx_add_conn && (ngx_event_flags & NGX_USE_EPOLL_EVENT) == 0) {
             if (ngx_add_conn(c) == NGX_ERROR) {
                 ngx_close_accepted_connection(c);
@@ -321,8 +323,7 @@ ngx_event_accept(ngx_event_t *ev)
         log->data = NULL;
         log->handler = NULL;
 
-        /* 对于tcp，处理phase之前不会读数据，local socket也没有放到
-           loop当中  */
+        /* 对于tcp，处理phase之前不会读数据 */
         ls->handler(c);
 
         if (ngx_event_flags & NGX_USE_KQUEUE_EVENT) {
@@ -336,11 +337,15 @@ ngx_event_accept(ngx_event_t *ev)
 #if !(NGX_WIN32)
 
 /* SOCK_DGRAM处于接收状态的socket可读后调用这个函数。主要作用是调用recvmsg，
-   将接收状态的socket包装成c：分配pool，保存收到的信息，设置客户端的地址，
-   设置c->send。没有必要设置c-recv，因为这里新生成的c后续根本不会接收消息了。
+ * 将接收状态的socket包装成c：分配pool，保存收到的信息，设置客户端的地址，
+ * 设置c->send。没有必要设置c-recv，因为这里新生成的c后续根本不会接收消息了。
 
-   强烈质疑当前udp转发的实现策略，这种方式根本无法承载较高的udp流量！！！
-   */
+ * 当前udp转发的实现策略是针对每个从downstream接收到的udp包都消耗一个connectin、
+ * 创建一个session，一个从downstream接收到的udp包可以对应多个从upstream发送到
+ * downstream的udp包，这些返回的udp包可以共用session。
+
+ * 这种实现方式仅适合小流量的udp转发，例如dns查询，但是无法承载较高的udp流量。
+ */
 void
 ngx_event_recvmsg(ngx_event_t *ev)
 {

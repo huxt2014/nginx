@@ -916,6 +916,7 @@ ngx_stream_log_merge_srv_conf(ngx_conf_t *cf, void *parent, void *child)
 }
 
 
+/* 处理stream的access_log，相关信息记录在lscf中。*/
 static char *
 ngx_stream_log_set_log(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 {

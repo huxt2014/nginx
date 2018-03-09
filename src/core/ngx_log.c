@@ -33,6 +33,9 @@ typedef struct {
 
 static ngx_command_t  ngx_errlog_commands[] = {
 
+    /* 处理NGX_MAIN_CONF中的error_log，处理后生成的链表存储在cycle中。
+     * access_log由各个模块处理，相关信息记录在各个模块当中。
+     */
     { ngx_string("error_log"),
       NGX_MAIN_CONF|NGX_CONF_1MORE,
       ngx_error_log,
@@ -145,6 +148,7 @@ ngx_log_error_core(ngx_uint_t level, ngx_log_t *log, ngx_err_t err,
         p = ngx_log_errno(p, last, err);
     }
 
+    /* 如果设置了log->handler，那么是一定会调用的 */
     if (level != NGX_LOG_DEBUG && log->handler) {
         p = log->handler(log, p, last - p);
     }
@@ -158,6 +162,8 @@ ngx_log_error_core(ngx_uint_t level, ngx_log_t *log, ngx_err_t err,
     wrote_stderr = 0;
     debug_connection = (log->log_level & NGX_LOG_DEBUG_CONNECTION) != 0;
 
+    /* 对于大于level的所有log，如果设置了log->writer，那么调用log->writer，否则
+     * 调用ngx_write_fd */
     while (log) {
 
         if (log->log_level < level && !debug_connection) {
@@ -180,6 +186,9 @@ ngx_log_error_core(ngx_uint_t level, ngx_log_t *log, ngx_err_t err,
             goto next;
         }
 
+        /* 对于Unix，调用的就是write。
+         * 貌似没有管到底有没有全部写进去，毕竟正常情况下，除非是磁盘满了，不然
+         * 都会成功写到内核的buffer中。 */
         n = ngx_write_fd(log->file->fd, errstr, p - errstr);
 
         if (n == -1 && ngx_errno == NGX_ENOSPC) {
@@ -478,6 +487,7 @@ ngx_log_get_file_log(ngx_log_t *head)
 }
 
 
+/* 一个ngx_log_t只可以配置一个level，可以顺带有一个debug标志 */
 static char *
 ngx_log_set_levels(ngx_conf_t *cf, ngx_log_t *log)
 {
@@ -541,6 +551,7 @@ ngx_log_set_levels(ngx_conf_t *cf, ngx_log_t *log)
 }
 
 
+/* 创建一个ngx_log_t，插入以cycle->new_log为head的链表当中 */
 static char *
 ngx_error_log(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 {
@@ -676,6 +687,9 @@ ngx_log_set_log(ngx_conf_t *cf, ngx_log_t **head)
 }
 
 
+/* 在log处开始找一个地方插入new_log，保证从log处开始按log_level从大到小的顺序
+ * 排列，即debug->info->warn->...。log是链表的head，否则可能出错。
+ */
 static void
 ngx_log_insert(ngx_log_t *log, ngx_log_t *new_log)
 {
