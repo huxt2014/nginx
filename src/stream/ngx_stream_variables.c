@@ -255,6 +255,11 @@ ngx_stream_add_prefix_variable(ngx_conf_t *cf, ngx_str_t *name,
 }
 
 
+/* 读取配置的时候发现使用了某个variable，才将其存储在cmcf->variables中。这个
+ * 过程不用检查该variable是否合法，具体的检查发生在
+ * ngx_stream_variables_init_vars函数，这个函数会去cmcf->variables_keys中核对
+ * 所有cmcf->variables的合法性。
+ */
 ngx_int_t
 ngx_stream_get_variable_index(ngx_conf_t *cf, ngx_str_t *name)
 {
@@ -315,6 +320,7 @@ ngx_stream_get_variable_index(ngx_conf_t *cf, ngx_str_t *name)
 }
 
 
+/* 通过index在s->variables中找到对应的v，这个过程会调用get_handler */
 ngx_stream_variable_value_t *
 ngx_stream_get_indexed_variable(ngx_stream_session_t *s, ngx_uint_t index)
 {
@@ -1095,6 +1101,11 @@ ngx_stream_regex_exec(ngx_stream_session_t *s, ngx_stream_regex_t *re,
 #endif
 
 
+/* 将core_vars加入cmcf的variables_keys中，这个工作在core_module的
+ * preconfiguration阶段完成。
+ * variables_keys中的v是从pool中分配的内存，cv的内容会被复制到v中，包括函数指针
+ * 等内容。variables_keys仅仅用于构建hash table，构建完后就不使用了。
+ */
 ngx_int_t
 ngx_stream_variables_add_core_vars(ngx_conf_t *cf)
 {
@@ -1103,12 +1114,14 @@ ngx_stream_variables_add_core_vars(ngx_conf_t *cf)
 
     cmcf = ngx_stream_conf_get_module_main_conf(cf, ngx_stream_core_module);
 
+    /* 从temp_pool中分配 */
     cmcf->variables_keys = ngx_pcalloc(cf->temp_pool,
                                        sizeof(ngx_hash_keys_arrays_t));
     if (cmcf->variables_keys == NULL) {
         return NGX_ERROR;
     }
 
+    /* 新加入的key应该会从pool中分配内存 */
     cmcf->variables_keys->pool = cf->pool;
     cmcf->variables_keys->temp_pool = cf->pool;
 
@@ -1131,6 +1144,7 @@ ngx_stream_variables_add_core_vars(ngx_conf_t *cf)
             return NGX_ERROR;
         }
 
+        /* 记得要复制 */
         *v = *cv;
     }
 
@@ -1138,6 +1152,12 @@ ngx_stream_variables_add_core_vars(ngx_conf_t *cf)
 }
 
 
+/* 校验cmcf->variables的合法性（cmcf->variables中的所有variable都应该在
+ * cmcf->variables_keys中存在），并将cmcf->variables_keys中的get_handler、data、
+ * flags等信息复制到cmcf->variables中。同时设置映射关系，使得后续通过index可以
+ * 在cmcf->variables中找到variable。最后构建hash table。
+ * 这一系列工作在解析stream block的最后阶段完成。
+ */
 ngx_int_t
 ngx_stream_variables_init_vars(ngx_conf_t *cf)
 {

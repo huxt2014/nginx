@@ -2,6 +2,43 @@
 /*
  * Copyright (C) Igor Sysoev
  * Copyright (C) Nginx, Inc.
+
+==============================================================================
+
+stream {
+    format f1 '$var1  $var2   $var3  more static content'
+    ...
+}               |   |   |   |   |    |
+                |   |   |   |   |    |
+              +---+---+---+---+---+---+
+     f1 ->    |op1|op2|op3|op4|op5|op6|
+              +---+---+---+---+---+---+
+                |      |        |             +----+
+                |      |        +-----------> |var3| -> get_handler/set_handler
+                |      |                      +----+
+                |      +--------------------> |var2|
+                |                             +----+
+                +---------------------------> |var1| <-cmcf
+                                              +----+
+
+==============================================================================
+                                   ngx_stream_log_handler
+
+           +--------+            +-------------------------+
+session -> | value1 | <--------> |op1.getlen -> get_handler|
+           +--------+            |op1.run    -> copy       |
+           | value2 | <---+      +-------------------------+
+           +--------+     |      |op2.getlen               |
+           | value3 |     |      |op2.run                  |
+           +--------+     |      +-------------------------+
+                          +----> |op3.getlen               |
+                                 |op3.run                  |
+                                 +-------------------------+
+                                 |...                      |
+                                 +-------------------------+
+
+                                           --> concatenate all ops to one line
+==============================================================================
  */
 
 
@@ -241,6 +278,7 @@ ngx_stream_log_handler(ngx_stream_session_t *s)
         op = log[l].format->ops->elts;
         for (i = 0; i < log[l].format->ops->nelts; i++) {
             if (op[i].len == 0) {
+                /* 非json的getlen是ngx_stream_log_variable_getlen */
                 len += op[i].getlen(s, op[i].data);
 
             } else {
@@ -310,6 +348,7 @@ ngx_stream_log_handler(ngx_stream_session_t *s)
         }
 
         for (i = 0; i < log[l].format->ops->nelts; i++) {
+            /* 非json的run是ngx_stream_log_variable */
             p = op[i].run(s, p, &op[i]);
         }
 
@@ -680,6 +719,7 @@ ngx_stream_log_copy_long(ngx_stream_session_t *s, u_char *buf,
 }
 
 
+/* 为op设置getlen run index*/
 static ngx_int_t
 ngx_stream_log_variable_compile(ngx_conf_t *cf, ngx_stream_log_op_t *op,
     ngx_str_t *value, ngx_uint_t json)
@@ -703,6 +743,12 @@ ngx_stream_log_variable_compile(ngx_conf_t *cf, ngx_stream_log_op_t *op,
     }
 
     op->data = index;
+
+    /* 之后会以这样的方式调用：
+     *     getlen(s, op.data);
+     *     run(s, p, &op);
+     * 有点像bridge pattern
+     */
 
     return NGX_OK;
 }
@@ -1025,6 +1071,7 @@ process_formats:
         return NGX_CONF_ERROR;
     }
 
+    /* 在lmcf中寻找format */
     fmt = lmcf->formats.elts;
     for (i = 0; i < lmcf->formats.nelts; i++) {
         if (fmt[i].name.len == name.len
@@ -1288,6 +1335,13 @@ ngx_stream_log_compile_format(ngx_conf_t *cf, ngx_array_t *flushes,
     }
 
     for ( /* void */ ; s < args->nelts; s++) {
+        /* 逐个解析elt，以 '$server_port|any1$session_time| any2' 为例，会得到
+         * 如下的op：
+         *     $server_port
+         *     |any1
+         *     $session_time
+         *     | any2
+         */
 
         i = 0;
 
@@ -1301,12 +1355,14 @@ ngx_stream_log_compile_format(ngx_conf_t *cf, ngx_array_t *flushes,
             data = &value[s].data[i];
 
             if (value[s].data[i] == '$') {
+                /* 如果读到了$server_port这样的variable */
 
                 if (++i == value[s].len) {
                     goto invalid;
                 }
 
                 if (value[s].data[i] == '{') {
+                    /* 允许类似于${...}的格式？ */
                     bracket = 1;
 
                     if (++i == value[s].len) {
@@ -1351,6 +1407,7 @@ ngx_stream_log_compile_format(ngx_conf_t *cf, ngx_array_t *flushes,
                     goto invalid;
                 }
 
+                /* 读取完了一个variable */
                 if (ngx_stream_log_variable_compile(cf, op, &var, json)
                     != NGX_OK)
                 {
@@ -1367,9 +1424,11 @@ ngx_stream_log_compile_format(ngx_conf_t *cf, ngx_array_t *flushes,
                     *flush = op->data; /* variable index */
                 }
 
+                /* 继续读下一个op，下一个op可能是variable，也可能不是 */
                 continue;
             }
 
+            /* 在这里处理非variable op */
             i++;
 
             while (i < value[s].len && value[s].data[i] != '$') {
@@ -1384,6 +1443,8 @@ ngx_stream_log_compile_format(ngx_conf_t *cf, ngx_array_t *flushes,
                 op->getlen = NULL;
 
                 if (len <= sizeof(uintptr_t)) {
+                    /* 如果一个指针的空间够用，那么直接使用，例如储存abcd需要
+                     * 32bit，那么一个指针就够了。*/
                     op->run = ngx_stream_log_copy_short;
                     op->data = 0;
 
@@ -1393,6 +1454,7 @@ ngx_stream_log_compile_format(ngx_conf_t *cf, ngx_array_t *flushes,
                     }
 
                 } else {
+                    /* 如果一个指针不够，那么就只能从pool里面再申请空间了 */
                     op->run = ngx_stream_log_copy_long;
 
                     p = ngx_pnalloc(cf->pool, len);

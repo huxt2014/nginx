@@ -2,6 +2,43 @@
 /*
  * Copyright (C) Roman Arutyunyan
  * Copyright (C) Nginx, Inc.
+ *
+
+
+        configuration file                                                       in memory
+
+                                     |                       |             +------+------+------+----+
+stream {                             | ----stream block----> |  main_conf  | mp00 | mp01 | mp02 | ...|
+                                     |                       |             +------+------+------+----+
+                                     |                       |             +------+------+------+----+   ----->-------+
+                                     |                       |  srv_conf   | sp00 | sp01 | sp02 | ...|                |
+  log_format  fmt1 '$var1 $var2'     |                       |             +------+------+------+----+                |
+                   '$var3 "$var4"';  |                       |                                                        |
+                                     |                       |                                                        |
+                                     |                       |             +------+------+------+----+                |
+  server {                           | ---a server block---> |  main_conf  | mp10 | mp11 | mp12 | ...|                |
+                                     |                       |             +------+------+------+----+   <--merge to--+
+                                     |                       |             +------+------+------+----+                |
+      listen:       localhost:8080;  |                       |  srv_conf   | sp10 | sp11 | sp12 | ...|                |
+      proxy_pass:   localhost:8081;  |                       |             +------+------+------+----+                |
+                                     |                       |                                                        |
+                                     |                       |                                                        |
+  }                                  |                       |                                                        |
+                                     |                       |             +------+------+------+----+                |
+  server {                           | ---a server block---> |  main_conf  | mp20 | mp21 | mp22 | ...|                |
+                                     |                       |             +------+------+------+----+   <--merge to--+
+                                     |                       |             +------+------+------+----+
+      listen:       localhost:8000;  |                       |  srv_conf   | sp20 | sp21 | sp22 | ...|
+      proxy_pass:   localhost:8001;  |                       |             +------+------+------+----+
+                                     |                       |
+                                     |                       |
+  }                                  |                       |          mp00 point to module0's main_conf
+                                     |                       |          mp01 point to module1's main_conf
+}                                    |                       |          ...
+                                                                        sp00 point to module0's srv_conf
+                                                                        sp01 point to module1's srv_conf
+                                                                        ...
+
  */
 
 
