@@ -203,10 +203,12 @@ main(int argc, char *const *argv)
 
     ngx_debug_init();
 
+    /* 一次行读取所有error code以及对应的message */
     if (ngx_strerror_init() != NGX_OK) {
         return 1;
     }
 
+    /* 将命令行参数存入全局变量中 */
     if (ngx_get_options(argc, argv) != NGX_OK) {
         return 1;
     }
@@ -230,6 +232,7 @@ main(int argc, char *const *argv)
     ngx_pid = ngx_getpid();
     ngx_parent = ngx_getppid();
 
+    /* 打开error_log相关的文件 */
     log = ngx_log_init(ngx_prefix);
     if (log == NULL) {
         return 1;
@@ -258,6 +261,7 @@ main(int argc, char *const *argv)
         return 1;
     }
 
+    /* 将config_file的路径，以及conf_param存入init_cycle中 */
     if (ngx_process_options(&init_cycle) != NGX_OK) {
         return 1;
     }
@@ -280,6 +284,7 @@ main(int argc, char *const *argv)
 
     ngx_slab_sizes_init();
 
+    /* 从环境变量读取socket并存到cycle->listening中 */
     if (ngx_add_inherited_sockets(&init_cycle) != NGX_OK) {
         return 1;
     }
@@ -289,9 +294,10 @@ main(int argc, char *const *argv)
         return 1;
     }
 
-    /* 此时init_cycle仅有argv, pool, log, prefix, config_file等 */
+    /* 解析配置文件，生成新的cycle，同时将旧cycle中的部分信息同步到新的cycle中。
+     * 主要做的工参考该函数的注释。
+     */
     cycle = ngx_init_cycle(&init_cycle);
-    /* 到这里就完成了配置文件的解析，socket进入了listen状态 */
     if (cycle == NULL) {
         if (ngx_test_config) {
             ngx_log_stderr(0, "configuration file %s test failed",
@@ -327,7 +333,7 @@ main(int argc, char *const *argv)
         return 0;
     }
 
-    /* 这里处理通过命令行发送的信号，如reload等 */
+    /* 这里处理通过命令行发送的信号，如reload等，最终还是会调用kill */
     if (ngx_signal) {
         return ngx_signal_process(cycle, ngx_signal);
     }
@@ -453,6 +459,9 @@ ngx_show_version_info(void)
 }
 
 
+/* 从环境变量读取socket并存到cycle->listening中。
+ * 虽然子进程自动获得父进程的所有socket，但是子进程不知道哪些socket处于
+ * listening状态。 */
 static ngx_int_t
 ngx_add_inherited_sockets(ngx_cycle_t *cycle)
 {
@@ -460,6 +469,7 @@ ngx_add_inherited_sockets(ngx_cycle_t *cycle)
     ngx_int_t         s;
     ngx_listening_t  *ls;
 
+    /* 通过环境变量将处于listening状态的socket传到子进程 */
     inherited = (u_char *) getenv(NGINX_VAR);
 
     if (inherited == NULL) {

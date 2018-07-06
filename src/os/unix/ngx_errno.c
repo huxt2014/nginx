@@ -42,6 +42,7 @@ ngx_strerror(ngx_err_t err, u_char *errstr, size_t size)
 }
 
 
+/* 一次行读取所有error code以及对应的message */
 ngx_int_t
 ngx_strerror_init(void)
 {

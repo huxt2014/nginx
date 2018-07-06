@@ -133,6 +133,8 @@ ngx_clone_listening(ngx_conf_t *cf, ngx_listening_t *ls)
 }
 
 
+/* 根据socket获得端口相关的信息，如ip地址。
+   一般在master fork出master才会使用这个函数。 */
 ngx_int_t
 ngx_set_inherited_sockets(ngx_cycle_t *cycle)
 {

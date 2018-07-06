@@ -323,6 +323,7 @@ ngx_log_errno(u_char *buf, u_char *last, ngx_err_t err)
 }
 
 
+/* 初始化ngx_log和ngx_log_file，存入的是error_log相关信息 */
 ngx_log_t *
 ngx_log_init(u_char *prefix)
 {

@@ -46,6 +46,21 @@ static ngx_connection_t  dumb;
 /* STUB */
 
 
+/* 解析配置文件，生成新的cycle，同时将旧cycle中的部分信息同步到新的cycle中。
+ * 主要做的工作有：
+ *   1. 重新分配一个pool
+ *   2. 从pool中创建一个新的cycle
+ *   3. 调用所有NGX_CORE_MODULE的create_config()，解析配置文件，调用所有
+ *      NGX_CORE_MODULE的init_conf()
+ *   4. 打开文件
+ *   5. 创建共享内存
+ *   6. 使socket进入listen状态，已经打开的socket（从环境变量中获得）不需
+ *      要再次listen，在test_config的模式下允许重复bind
+ *   7. 调用所有module的init_module函数
+ *   8. 关闭不需要的处于listen状态的socket
+ *   9. 关闭不需要的文件
+ *   10.保存老的cycle
+ */
 ngx_cycle_t *
 ngx_init_cycle(ngx_cycle_t *old_cycle)
 {
@@ -77,6 +92,7 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
 
     log = old_cycle->log;
 
+    /* 分配一个新的pool */
     pool = ngx_create_pool(NGX_CYCLE_POOL_SIZE, log);
     if (pool == NULL) {
         return NULL;
@@ -94,7 +110,7 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
     cycle->log = log;
     cycle->old_cycle = old_cycle;
 
-    /* 将旧的配置拷贝到新的cycle里面，下面有很多类似操作 */
+    /* 复制conf_prefix */
     cycle->conf_prefix.len = old_cycle->conf_prefix.len;
     cycle->conf_prefix.data = ngx_pstrdup(pool, &old_cycle->conf_prefix);
     if (cycle->conf_prefix.data == NULL) {
@@ -102,6 +118,7 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
         return NULL;
     }
 
+    /* 复制prefix */
     cycle->prefix.len = old_cycle->prefix.len;
     cycle->prefix.data = ngx_pstrdup(pool, &old_cycle->prefix);
     if (cycle->prefix.data == NULL) {
@@ -109,7 +126,7 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
         return NULL;
     }
 
-    /* 配置文件的名称 */
+    /* 复制配置文件的名称 */
     cycle->conf_file.len = old_cycle->conf_file.len;
     cycle->conf_file.data = ngx_pnalloc(pool, old_cycle->conf_file.len + 1);
     if (cycle->conf_file.data == NULL) {
@@ -119,6 +136,7 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
     ngx_cpystrn(cycle->conf_file.data, old_cycle->conf_file.data,
                 old_cycle->conf_file.len + 1);
 
+    /* 复制conf_param */
     cycle->conf_param.len = old_cycle->conf_param.len;
     cycle->conf_param.data = ngx_pstrdup(pool, &old_cycle->conf_param);
     if (cycle->conf_param.data == NULL) {
@@ -264,7 +282,7 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
     senv = environ;
 
 
-    /* conf用于解析配置文件 */
+    /* 解析配置文件时用来存储上下文 */
     ngx_memzero(&conf, sizeof(ngx_conf_t));
     /* STUB: init array ? */
     conf.args = ngx_array_create(pool, 10, sizeof(ngx_str_t));
@@ -554,6 +572,7 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
                                      ls[i].sockaddr, ls[i].socklen, 1)
                     == NGX_OK)
                 {
+                    /* 已经处于open状态了，后续就不需要再次打开了 */
                     nls[n].fd = ls[i].fd;
                     nls[n].previous = &ls[i];
                     ls[i].remain = 1;
